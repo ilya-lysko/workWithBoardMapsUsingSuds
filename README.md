@@ -1,3 +1,5 @@
+This script works with boardmaps servers using API. I use suds lib for easily work.
+
 Some preparations.
 You need to install 2 libs:
 
