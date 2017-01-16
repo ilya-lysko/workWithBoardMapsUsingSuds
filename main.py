@@ -151,6 +151,107 @@ class ClientBM:
             return companyInfo.CompanyDto[0].Id
         except WebFault as e:
             print(e)
+
+    def getHoldingIdByCompanyShortName(self, companyShortName, login, password):
+        '''
+        Метод для вытягивания ID холдинга
+        Входные параметры - короткое название компании (любой)
+        '''
+        self.startWorkWithInterface(0)
+        self.authorization(login, password)
+        CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
+        CompanySearchCriteriaDto.ShortNameToken = companyShortName
+        try:
+            companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
+            if companyInfo == '':
+                raise Exception('Компании с таким именем нет.')
+            return companyInfo.CompanyDto[0].Holding.Id
+        except WebFault as e:
+            print(e)
+
+
+    def createCompany(self, companyInfo, holdingId):
+        '''
+        Создании Компании, опираясь информацию из companyInfo
+        Так же, требуется holdingId (дл определения этого параметра есть отдельный метод)
+        '''
+        ArrayOfCompanyCreationCommandDto = self.client.factory.create('ns0:ArrayOfCompanyCreationCommandDto')
+        CompanyCreationCommandDto = self.client.factory.create('ns0:CompanyCreationCommandDto')
+        IdentityDto = self.client.factory.create('ns0:IdentityDto')
+
+        CompanyCreationCommandDto.AddressBuildingNumber = companyInfo.AddressBuildingNumber
+        CompanyCreationCommandDto.AddressCity = companyInfo.AddressCity
+        CompanyCreationCommandDto.AddressCountry = companyInfo.AddressCountry
+        CompanyCreationCommandDto.AddressIndex = companyInfo.AddressIndex
+        CompanyCreationCommandDto.Email = companyInfo.Email
+        CompanyCreationCommandDto.FullName = companyInfo.FullName
+        IdentityDto.Id = holdingId
+        CompanyCreationCommandDto.Holding = IdentityDto
+        CompanyCreationCommandDto.Phone = companyInfo.Phone
+        CompanyCreationCommandDto.PostBuildingNumber = companyInfo.PostBuildingNumber
+        CompanyCreationCommandDto.PostCity = companyInfo.PostCity
+        CompanyCreationCommandDto.PostCountry = companyInfo.PostCountry
+        CompanyCreationCommandDto.PostIndex = companyInfo.PostIndex
+        CompanyCreationCommandDto.ShortDescription = companyInfo.ShortDescription
+        CompanyCreationCommandDto.ShortName = companyInfo.ShortName
+        CompanyCreationCommandDto.UrlSite = companyInfo.UrlSite
+
+        ArrayOfCompanyCreationCommandDto.CompanyCreationCommandDto.append(CompanyCreationCommandDto)
+
+        try:
+            getInfo = self.client.service.Create(ArrayOfCompanyCreationCommandDto)
+            print(getInfo)
+        except WebFault as e:
+            print(e)
+
+    def createCollegialBody(self, collegialBodyInfo, holdingId, companyId):
+        '''
+        Создание Коллегиального Органа, опираясь на информацию из входного значения - collegialBodyInfo
+        После создания пользователей лучше, т.к. тут уже определяется секретарь
+        Соответственно, желательно, чтобы пользователь, которому планируется присвоить роль секретаря был создан
+        '''
+        ArrayOfCollegialBodyCreationCommandDto = client.factory.create('ns0:ArrayOfCollegialBodyCreationCommandDto')
+        CollegialBodyCreationCommandDto = client.factory.create('ns0:CollegialBodyCreationCommandDto')
+        AttendanceTypeEnumDto = client.factory.create('ns0:AttendanceTypeEnumDto')
+        CollegialBodyTypeEnumDto = client.factory.create('ns0:CollegialBodyTypeEnumDto')
+        IdentityDtoCompany = client.factory.create('ns0:IdentityDto')
+        LdapUserIdentityDtoHeadOf = client.factory.create('ns0:LdapUserIdentityDto')
+        IdentityDtoParent = client.factory.create('ns0:IdentityDto')
+        LdapUserIdentityDtoQM = client.factory.create('ns0:LdapUserIdentityDto')
+
+        IdentityDtoParent.Id = collegialBodyInfo.ParentId
+        CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
+        LdapUserIdentityDtoHeadOf.Id = collegialBodyInfo.HeadOfId
+        LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo.HeadOfName
+        CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
+        IdentityDtoCompany.Id = collegialBodyInfo.CompanyId
+        CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
+        # поля уже заполнены для полей ниже, которы закоменчены
+        # разобраться
+        #CollegialBodyTypeEnumDto.Executive = collegialBodyInfo.Executive
+        #CollegialBodyTypeEnumDto.ManagementBody = collegialBodyInfo.ManagementBody
+        #CollegialBodyTypeEnumDto.NotCorporate = collegialBodyInfo.NotCorporate
+        #CollegialBodyTypeEnumDto.NotExecutive = collegialBodyInfo.NotExecutive
+        #CollegialBodyTypeEnumDto.State = collegialBodyInfo.State
+        #ollegialBodyCreationCommandDto.CollegialBodyType = CollegialBodyTypeEnumDto
+        #AttendanceTypeEnumDto.0 = collegialBodyInfo.0 
+        #AttendanceTypeEnumDto.1 = collegialBodyInfo.1
+        CollegialBodyCreationCommandDto.Attendance = AttendanceTypeEnumDto
+        CollegialBodyCreationCommandDto.FullName = collegialBodyInfo.FullName
+        CollegialBodyCreationCommandDto.Order = collegialBodyInfo.Order
+        CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo.QualifiedMajority
+        CollegialBodyCreationCommandDto.Secretary = collegialBodyInfo.Secretary
+        CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo.ShortDescription
+        CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo.ShortName
+
+        try:
+            getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
+            print(getInfo)
+        except WebFault as e:
+            print(e)
+
+
+
 			
 if __name__ == '__main__':
     print('Старт работы скрипта.')
