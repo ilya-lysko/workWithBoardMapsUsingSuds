@@ -1,3 +1,4 @@
+import sys
 import suds
 from suds import client
 from suds.sax.element import Element
@@ -251,26 +252,25 @@ class ClientBM:
             print(e)
 
 
+'''
+ПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН (это пока, надо сделать привязку к флажкам)):
+- адрес сервера BM
+- путь к excel файлу (с расширением и именем самого файла)
+- логин для входа на сервер BM
+- пароль для входа на сервер BM
+- желаемый пароль для создаваемых пользователей
+'''
 
 			
 if __name__ == '__main__':
     print('Старт работы скрипта.')
-    print('---------------------')
-    url = str(input('Введите URL сервера boardmaps (with http or https): '))
-    print('---------------------')
+    sys.argv = sys.argv[1:]
+    url = sys.argv[0]
     clientBM = ClientBM(url)
-    excelFilePathPlusName = str(input('''Введите путь к excel файлу и его имя 
-                                    (лучше положить excel файл в ту же папку,
-                                    что и скрипт). Не забудьте про расширение файла \
-                                    - укажите его после имени файла через точку.: '''))
-    print('---------------------')
-    login = str(input('Введите логин для входа на сервер boardmaps: '))
-    print('---------------------')
-    password = str(input('Введите пароль для входа на сервер boardmaps: '))
-    print('---------------------')
-    defaultPassword = str(input('Введите желаемый пароль для всех пользователей, которых вы хотите создать: '))
-    print('---------------------')
+    excelFilePathPlusName = sys.argv[1]
+    login = sys.argv[2]
+    password = sys.argv[3]
+    defaultPassword = sys.argv[4]
     clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
-    print('---------------------')
     print('Конец работы скрипта.')
     #raw_input()
