@@ -273,4 +273,3 @@ if __name__ == '__main__':
     defaultPassword = sys.argv[4]
     clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
     print('Конец работы скрипта.')
-    #raw_input()
