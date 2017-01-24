@@ -1,14 +1,18 @@
-This script works with boardmaps servers using API. I use suds lib for easily work.
+## This script works with boardmaps API using suds lib.
 
-Some preparations.
+### Some preparations.
 You need to install 2 libs:
 
-1). suds
-This is soap-based client for python3.
-You can install it using pip - "pip install suds-jurko"
 
-2). xlrd
-This lib we'll use for excel files parsing.
-You can install it using pip too - "pip install xlrd"
+* [Suds](https://fedorahosted.org/suds/) - soap-based client for python3.
+You can install it using pip
+```
+pip install suds-jurko
+```
 
-If you don't have pip -- you can easily install it from official site, google will help you.
+
+* [xlrd](https://pypi.python.org/pypi/xlrd) - this lib we'll use for excel files parsing.
+You can install it using pip too
+```
+pip install xlrd"
+```
