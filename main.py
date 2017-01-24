@@ -319,7 +319,7 @@ if __name__ == '__main__':
     login = sys.argv[2]
     password = sys.argv[3]
     defaultPassword = sys.argv[4]
-    #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
+    clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
     clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
     print('Конец работы скрипта.')
     #raw_input()
