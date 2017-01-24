@@ -1,3 +1,4 @@
+import sys
 import suds
 from suds import client
 from suds.sax.element import Element
@@ -11,7 +12,6 @@ class ClientBM:
     currentInterfacenumberInArray = int()
     excelFile = None
     defaultEmail = 'demoboardmaps@yandex.ru'
-    ArrayOfDictWithUsersInfo = []
     interfaces = ['CompanyManagementService','UserManagementService','CollegialBodyManagementService',
                  'MeetingManagementService','MeetingMemberManagementService','IssueManagementService'
                  ,'DecisionProjectManagementService','InvitedMember2IssueManagementService',
@@ -46,7 +46,7 @@ class ClientBM:
         ArrayOfUserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto')
         UserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto')
         Company = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto.Company')
-
+        print(userInfo)
         UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
         UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
         UserCreationCommandDto.Blocked = userInfo['Blocked']
@@ -65,9 +65,16 @@ class ClientBM:
         
         try:
             getInfo = self.client.service.Create(ArrayOfUserCreationCommandDto)
-            print(getInfo)
+            #print(getInfo)
         except WebFault as e:
             print(e)
+
+    def getCompanyShortName(self):
+        return str(input('Введите короткое имя компании, с которой будет построено дальнейшее взаимодействие: '))
+
+    def getDecisionAboutDefaultEmail(self):
+        return bool(input('Использовать стандартный email для всех пользователей - ' + self.defaultEmail + 
+                                     '?.\n Да - 1, нет - 0. : '))
             
     def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId, useDefaultEmail):
         '''
@@ -75,13 +82,6 @@ class ClientBM:
         '''
         for userInfo in arrayOfUserInfoDict:
             self.createUser(userInfo, usersCompanyId, useDefaultEmail)
-            
-    def getCompanyShortName(self):
-        return str(input('Введите короткое имя компании, в которой требуется создать пользователей: '))
-    
-    def getDecisionAboutDefaultEmail(self):
-        return bool(input('Использовать стандартный email для всех пользователей - ' + self.defaultEmail + 
-                                     '?.\n Да - 1, нет - 0. : '))
 
     def createUsersFromExcelController(self, excelFilePathPlusName, login, password, defaultPassword):
         '''
@@ -89,55 +89,104 @@ class ClientBM:
         Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
         '''
         companyShortName = self.getCompanyShortName()
-        print('---------------------')
         usersCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
         self.startWorkWithInterface(interfaceNumberInArray=1)
         self.authorization(login, password)
         useDefaultEmail = self.getDecisionAboutDefaultEmail()
-        print('---------------------')
-        self.workWithExcelController(excelFilePathPlusName, defaultPassword)
-        self.createSeveralUsers(self.ArrayOfDictWithUsersInfo, usersCompanyId, useDefaultEmail)
+        arrayOfDictWithUsersInfo = self.workWithUsersExcelController(excelFilePathPlusName, defaultPassword)
+        self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId, useDefaultEmail)
+
+    def createCompanyFromExcelController(self, excelFilePathPlusName, login, password):
+        '''
+        Создание компаниии по информации из excel.
+        Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
+        '''
+        companyShortName = self.getCompanyShortName()
+        holdingId = self.getHoldingIdByCompanyShortName(companyShortName, login, password)
+        self.startWorkWithInterface(interfaceNumberInArray=0)
+        self.authorization(login, password)
+        arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
+        self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
             
     def openExcelFile(self, filePathPlusName):
         self.excelFile = xlrd.open_workbook(filePathPlusName)
         
-    def readUsersList(self, usersListName='ПОЛЬЗОВАТЕЛИ'):
+    def readList(self, listName):
         '''
         Название листа с пользователями:
         рус - 'ПОЛЬЗОВАТЕЛИ'
         англ - 'USERS'
+
+        Название листа с КО:
+        рус - 'КО'
+        англ -- надо уточнить
+
+        Название листа с компанией:
+        рус - 'О КОМПАНИИ'
+        англ -- надо уточнить
         '''
-        return self.excelFile.sheet_by_name(usersListName)
+        return self.excelFile.sheet_by_name(listName)
     
-    def readUsersInfoFromList(self, listFile, startInfoPosition=4):
+    def readInfoFromList(self, listFile, startInfoPosition):
         '''
-        Создается массив со ВСЕЙ информацией о пользователях из таблицы
+        Создается массив со ВСЕЙ информацией о сущности из таблицы
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
         Но не хочется так просто выкидывать часть информации -- вдруг пригодится потом
+
+        Для пользователей startInfoPosition = 4, для КО - startInfoPosition = 5, для компании - startInfoPosition = 3.
         '''
-        arrayWithUsersInfo = []
+        arrayWithInfo = []
         i = startInfoPosition
         try:
             while listFile.row_values(i)[2] != '':
-                arrayWithUsersInfo.append(listFile.row_values(i))
+                arrayWithInfo.append(listFile.row_values(i))
                 i += 1
         except IndexError as e:
             pass
-        return arrayWithUsersInfo
+        return arrayWithInfo
     
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
+        arrayOfDictWithUsersInfo = []
         for x in arrayWithUsersInfo:
-            self.ArrayOfDictWithUsersInfo.append({
+            arrayOfDictWithUsersInfo.append({
                     'BasicPassword': defaultPassword, 'BasicUsername': x[14], 'Blocked': False,
                     'Company': None, 'Email': x[11], 'FirstName': x[2].split()[1], 
                     'LastName': x[2].split()[0], 'Phone': x[12], 'Position': x[9]
                  })
-            
-    def workWithExcelController(self, excelFilePathPlusName, defaultPassword):
+        return arrayOfDictWithUsersInfo
+
+    #def createArrayOfDictWithCBInfo(self, arrayWithCBInfo):
+    #    arrayOfDictWithCBInfo = []
+    #    for x in arrayWithCBInfo:
+    #        arrayOfDictWithCBInfo.append({
+    #
+    #            })
+
+    def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
+        arrayOfDictWithCompanyInfo = []
+        arrayOfDictWithCompanyInfo.append({
+                    'AddressBuildingNumber': arrayWithCompanyInfo[10][2], 'AddressCity': arrayWithCompanyInfo[9][2],
+                    'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': arrayWithCompanyInfo[7][2],
+                    'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[0][2],
+                    'holdingId': None, 'Phone': arrayWithCompanyInfo[5][2],
+                    'PostBuildingNumber': arrayWithCompanyInfo[15][2], 'PostCity': arrayWithCompanyInfo[14][2],
+                    'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': arrayWithCompanyInfo[12][2],
+                    'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
+                    'UrlSite': arrayWithCompanyInfo[3][2]
+                })
+        return arrayOfDictWithCompanyInfo
+
+    def workWithUsersExcelController(self, excelFilePathPlusName, defaultPassword):
         self.openExcelFile(excelFilePathPlusName)
-        excelList = self.readUsersList()
-        arrayWithUsersInfo = self.readUsersInfoFromList(excelList)
-        self.createArrayOfDictWithUsersInfo(arrayWithUsersInfo, defaultPassword)
+        excelList = self.readList(listName='ПОЛЬЗОВАТЕЛИ')
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
+        return self.createArrayOfDictWithUsersInfo(arrayWithInfo, defaultPassword)
+
+    def workWithCompanyExcelController(self, excelFilePathPlusName):
+        self.openExcelFile(excelFilePathPlusName)
+        excelList = self.readList(listName='О КОМПАНИИ')
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
+        return self.createArrayWithCompanyInfo(arrayWithInfo)
         
     def getCompanyIdByItsShortName(self, companyShortName, login, password):
         self.startWorkWithInterface(0)
@@ -179,28 +228,28 @@ class ClientBM:
         CompanyCreationCommandDto = self.client.factory.create('ns0:CompanyCreationCommandDto')
         IdentityDto = self.client.factory.create('ns0:IdentityDto')
 
-        CompanyCreationCommandDto.AddressBuildingNumber = companyInfo.AddressBuildingNumber
-        CompanyCreationCommandDto.AddressCity = companyInfo.AddressCity
-        CompanyCreationCommandDto.AddressCountry = companyInfo.AddressCountry
-        CompanyCreationCommandDto.AddressIndex = companyInfo.AddressIndex
-        CompanyCreationCommandDto.Email = companyInfo.Email
-        CompanyCreationCommandDto.FullName = companyInfo.FullName
+        CompanyCreationCommandDto.AddressBuildingNumber = companyInfo['AddressBuildingNumber']
+        CompanyCreationCommandDto.AddressCity = companyInfo['AddressCity']
+        CompanyCreationCommandDto.AddressCountry = companyInfo['AddressCountry']
+        CompanyCreationCommandDto.AddressIndex = companyInfo['AddressIndex']
+        CompanyCreationCommandDto.Email = companyInfo['Email']
+        CompanyCreationCommandDto.FullName = companyInfo['FullName']
         IdentityDto.Id = holdingId
         CompanyCreationCommandDto.Holding = IdentityDto
-        CompanyCreationCommandDto.Phone = companyInfo.Phone
-        CompanyCreationCommandDto.PostBuildingNumber = companyInfo.PostBuildingNumber
-        CompanyCreationCommandDto.PostCity = companyInfo.PostCity
-        CompanyCreationCommandDto.PostCountry = companyInfo.PostCountry
-        CompanyCreationCommandDto.PostIndex = companyInfo.PostIndex
-        CompanyCreationCommandDto.ShortDescription = companyInfo.ShortDescription
-        CompanyCreationCommandDto.ShortName = companyInfo.ShortName
-        CompanyCreationCommandDto.UrlSite = companyInfo.UrlSite
+        CompanyCreationCommandDto.Phone = companyInfo['Phone']
+        CompanyCreationCommandDto.PostBuildingNumber = companyInfo['PostBuildingNumber']
+        CompanyCreationCommandDto.PostCity = companyInfo['PostCity']
+        CompanyCreationCommandDto.PostCountry = companyInfo['PostCountry']
+        CompanyCreationCommandDto.PostIndex = companyInfo['PostIndex']
+        CompanyCreationCommandDto.ShortDescription = companyInfo['ShortDescription']
+        CompanyCreationCommandDto.ShortName = companyInfo['ShortName']
+        CompanyCreationCommandDto.UrlSite = companyInfo['UrlSite']
 
         ArrayOfCompanyCreationCommandDto.CompanyCreationCommandDto.append(CompanyCreationCommandDto)
 
         try:
             getInfo = self.client.service.Create(ArrayOfCompanyCreationCommandDto)
-            print(getInfo)
+            #print(getInfo)
         except WebFault as e:
             print(e)
 
@@ -219,58 +268,58 @@ class ClientBM:
         IdentityDtoParent = client.factory.create('ns0:IdentityDto')
         LdapUserIdentityDtoQM = client.factory.create('ns0:LdapUserIdentityDto')
 
-        IdentityDtoParent.Id = collegialBodyInfo.ParentId
+        IdentityDtoParent.Id = collegialBodyInfo['ParentId']
         CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
-        LdapUserIdentityDtoHeadOf.Id = collegialBodyInfo.HeadOfId
-        LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo.HeadOfName
+        LdapUserIdentityDtoHeadOf.Id = collegialBodyInfo['HeadOfId']
+        LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo['HeadOfName']
         CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
-        IdentityDtoCompany.Id = collegialBodyInfo.CompanyId
+        IdentityDtoCompany.Id = collegialBodyInfo['CompanyId']
         CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
         # поля уже заполнены для полей ниже, которы закоменчены
         # разобраться
-        #CollegialBodyTypeEnumDto.Executive = collegialBodyInfo.Executive
-        #CollegialBodyTypeEnumDto.ManagementBody = collegialBodyInfo.ManagementBody
-        #CollegialBodyTypeEnumDto.NotCorporate = collegialBodyInfo.NotCorporate
-        #CollegialBodyTypeEnumDto.NotExecutive = collegialBodyInfo.NotExecutive
+        #CollegialBodyTypeEnumDto.Executive = collegialBodyInfo['Executive']
+        #CollegialBodyTypeEnumDto.ManagementBody = collegialBodyInfo['ManagementBody']
+        #CollegialBodyTypeEnumDto.NotCorporate = collegialBodyInfo['NotCorporate']
+        #CollegialBodyTypeEnumDto.NotExecutive = collegialBodyInfo['NotExecutive']
         #CollegialBodyTypeEnumDto.State = collegialBodyInfo.State
         #ollegialBodyCreationCommandDto.CollegialBodyType = CollegialBodyTypeEnumDto
-        #AttendanceTypeEnumDto.0 = collegialBodyInfo.0 
-        #AttendanceTypeEnumDto.1 = collegialBodyInfo.1
+        #AttendanceTypeEnumDto.0 = collegialBodyInfo['0'] 
+        #AttendanceTypeEnumDto.1 = collegialBodyInfo['1']
         CollegialBodyCreationCommandDto.Attendance = AttendanceTypeEnumDto
-        CollegialBodyCreationCommandDto.FullName = collegialBodyInfo.FullName
-        CollegialBodyCreationCommandDto.Order = collegialBodyInfo.Order
-        CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo.QualifiedMajority
-        CollegialBodyCreationCommandDto.Secretary = collegialBodyInfo.Secretary
-        CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo.ShortDescription
-        CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo.ShortName
+        CollegialBodyCreationCommandDto.FullName = collegialBodyInfo['FullName']
+        CollegialBodyCreationCommandDto.Order = collegialBodyInfo['Order']
+        CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
+        CollegialBodyCreationCommandDto.Secretary = collegialBodyInfo['Secretary']
+        CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo['ShortDescription']
+        CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo['ShortName']
 
         try:
             getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
-            print(getInfo)
+            #print(getInfo)
         except WebFault as e:
             print(e)
 
 
+'''
+ПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН (это пока, надо сделать привязку к флажкам)):
+- адрес сервера BM
+- путь к excel файлу (с расширением и именем самого файла)
+- логин для входа на сервер BM
+- пароль для входа на сервер BM
+- желаемый пароль для создаваемых пользователей
+'''
 
-			
+
 if __name__ == '__main__':
     print('Старт работы скрипта.')
-    print('---------------------')
-    url = str(input('Введите URL сервера boardmaps (with http or https): '))
-    print('---------------------')
+    sys.argv = sys.argv[1:]
+    url = sys.argv[0]
     clientBM = ClientBM(url)
-    excelFilePathPlusName = str(input('''Введите путь к excel файлу и его имя 
-                                    (лучше положить excel файл в ту же папку,
-                                    что и скрипт). Не забудьте про расширение файла \
-                                    - укажите его после имени файла через точку.: '''))
-    print('---------------------')
-    login = str(input('Введите логин для входа на сервер boardmaps: '))
-    print('---------------------')
-    password = str(input('Введите пароль для входа на сервер boardmaps: '))
-    print('---------------------')
-    defaultPassword = str(input('Введите желаемый пароль для всех пользователей, которых вы хотите создать: '))
-    print('---------------------')
-    clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
-    print('---------------------')
+    excelFilePathPlusName = sys.argv[1]
+    login = sys.argv[2]
+    password = sys.argv[3]
+    defaultPassword = sys.argv[4]
+    #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
+    clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
     print('Конец работы скрипта.')
     #raw_input()
