@@ -1,4 +1,5 @@
 import sys
+import re
 import suds
 from suds import client
 from suds.sax.element import Element
@@ -166,11 +167,11 @@ class ClientBM:
         arrayOfDictWithCompanyInfo = []
         arrayOfDictWithCompanyInfo.append({
                     'AddressBuildingNumber': arrayWithCompanyInfo[10][2], 'AddressCity': arrayWithCompanyInfo[9][2],
-                    'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': arrayWithCompanyInfo[7][2],
+                    'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': int(arrayWithCompanyInfo[7][2]),
                     'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[0][2],
                     'holdingId': None, 'Phone': arrayWithCompanyInfo[5][2],
                     'PostBuildingNumber': arrayWithCompanyInfo[15][2], 'PostCity': arrayWithCompanyInfo[14][2],
-                    'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': arrayWithCompanyInfo[12][2],
+                    'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': int(arrayWithCompanyInfo[12][2]),
                     'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
                     'UrlSite': arrayWithCompanyInfo[3][2]
                 })
@@ -281,7 +282,7 @@ class ClientBM:
         #CollegialBodyTypeEnumDto.ManagementBody = collegialBodyInfo['ManagementBody']
         #CollegialBodyTypeEnumDto.NotCorporate = collegialBodyInfo['NotCorporate']
         #CollegialBodyTypeEnumDto.NotExecutive = collegialBodyInfo['NotExecutive']
-        #CollegialBodyTypeEnumDto.State = collegialBodyInfo.State
+        #CollegialBodyTypeEnumDto.State = collegialBodyInfo['State']
         #ollegialBodyCreationCommandDto.CollegialBodyType = CollegialBodyTypeEnumDto
         #AttendanceTypeEnumDto.0 = collegialBodyInfo['0'] 
         #AttendanceTypeEnumDto.1 = collegialBodyInfo['1']
@@ -319,7 +320,7 @@ if __name__ == '__main__':
     login = sys.argv[2]
     password = sys.argv[3]
     defaultPassword = sys.argv[4]
-    clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
+    #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
     clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
     print('Конец работы скрипта.')
     #raw_input()
