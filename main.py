@@ -109,9 +109,20 @@ class ClientBM:
         arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
         self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
             
+    def createCBFromExcelController(self, excelFilePathPlusName, login, password):
+        '''
+        Создание КО по информации из excel.
+        Включает начало работы с интерфейсом по работе (бог тафтологии) с КО, авторизацию и т.д.
+        '''
+        CBCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
+        self.startWorkWithInterface(interfaceNumberInArray=2)
+        self.authorization(login, password)
+        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
+        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId)
+
     def openExcelFile(self, filePathPlusName):
         self.excelFile = xlrd.open_workbook(filePathPlusName)
-        
+
     def readList(self, listName):
         '''
         Название листа с пользователями:
@@ -134,7 +145,7 @@ class ClientBM:
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
         Но не хочется так просто выкидывать часть информации -- вдруг пригодится потом
 
-        Для пользователей startInfoPosition = 4, для КО - startInfoPosition = 5, для компании - startInfoPosition = 3.
+        Для пользователей и КО startInfoPosition = 4, для компании - startInfoPosition = 3.
         '''
         arrayWithInfo = []
         i = startInfoPosition
@@ -145,7 +156,15 @@ class ClientBM:
         except IndexError as e:
             pass
         return arrayWithInfo
-    
+
+    def getHeadsOfandSecretariesFromExcel(self):
+        '''
+        Из соответствубщего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
+        '''
+        listFile = readList('РОЛИ')
+        #ДОПИСАТЬ
+
+
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
         arrayOfDictWithUsersInfo = []
         for x in arrayWithUsersInfo:
@@ -156,12 +175,18 @@ class ClientBM:
                  })
         return arrayOfDictWithUsersInfo
 
-    #def createArrayOfDictWithCBInfo(self, arrayWithCBInfo):
-    #    arrayOfDictWithCBInfo = []
-    #    for x in arrayWithCBInfo:
-    #        arrayOfDictWithCBInfo.append({
-    #
-    #            })
+    def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
+        arrayOfDictWithCBInfo = []
+        j = 1
+        for x in arrayWithCBInfo:
+            arrayOfDictWithCBInfo.append({
+                    'FullName': x[2], 'ShortName': x[4], 'ParentId': None, 'HeadOfId': None,
+                    'Order': j, 'CompanyId': None, 'QualifiedMajority': qualifiedCBUsersCount,
+                    'Secretary': None, 'ShortDescription': x[9]
+
+                })
+            j += 1
+        return arrayOfDictWithCBInfo
 
     def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
         arrayOfDictWithCompanyInfo = []
@@ -188,6 +213,12 @@ class ClientBM:
         excelList = self.readList(listName='О КОМПАНИИ')
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
         return self.createArrayWithCompanyInfo(arrayWithInfo)
+
+    def workWithCBExcelController(self, excelFilePathPlusName):
+        self.openExcelFile(excelFilePathPlusName)
+        excelList = self.readList(listName='КО')
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
+        return self.createArrayOfDictWithCBInfo(arrayWithInfo)
         
     def getCompanyIdByItsShortName(self, companyShortName, login, password):
         self.startWorkWithInterface(0)
@@ -254,7 +285,11 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def createCollegialBody(self, collegialBodyInfo, holdingId, companyId):
+    def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
+        for CBInfo in arrayOfDictWithCBInfo:
+            self.createCollegialBody(CBInfo, CBCompanyId, headOfId, secretaryId)
+
+    def createCollegialBody(self, collegialBodyInfo, holdingId, CBCompanyId, , headOfId, secretaryId):
         '''
         Создание Коллегиального Органа, опираясь на информацию из входного значения - collegialBodyInfo
         После создания пользователей лучше, т.к. тут уже определяется секретарь
@@ -271,10 +306,10 @@ class ClientBM:
 
         IdentityDtoParent.Id = collegialBodyInfo['ParentId']
         CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
-        LdapUserIdentityDtoHeadOf.Id = collegialBodyInfo['HeadOfId']
-        LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo['HeadOfName']
+        LdapUserIdentityDtoHeadOf.Id = headOfId
+        #LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo['HeadOfName']
         CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
-        IdentityDtoCompany.Id = collegialBodyInfo['CompanyId']
+        IdentityDtoCompany.Id = CBCompanyId
         CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
         # поля уже заполнены для полей ниже, которы закоменчены
         # разобраться
@@ -290,7 +325,7 @@ class ClientBM:
         CollegialBodyCreationCommandDto.FullName = collegialBodyInfo['FullName']
         CollegialBodyCreationCommandDto.Order = collegialBodyInfo['Order']
         CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
-        CollegialBodyCreationCommandDto.Secretary = collegialBodyInfo['Secretary']
+        CollegialBodyCreationCommandDto.Secretary = secretaryId
         CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo['ShortDescription']
         CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo['ShortName']
 
