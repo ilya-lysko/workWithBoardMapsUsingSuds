@@ -5,6 +5,7 @@ from suds import client
 from suds.sax.element import Element
 from suds.wsse import *
 import xlrd
+from urllib.error import URLError
 
 class ClientBM:
     
@@ -19,6 +20,9 @@ class ClientBM:
                   'SpokesPerson2IssueManagementService',
                   'MaterialManagementService','DocumentManagementService','InstructionManagementService']
     
+#=========================================================
+# МЕТОДЫ ДЛЯ ПОДКЛЮЧЕНИЯ, АВТОРИЗАЦИИ И СТАРТА РАБОТЫ
+
     def __init__(self, serverURL):
         self.serverURL = serverURL
         
@@ -26,8 +30,12 @@ class ClientBM:
         '''
         Отсчет interfaceNumberInArray начинается с 0
         '''
-        self.currentInterfacenumberInArray = interfaceNumberInArray
-        self.client = suds.client.Client(self.serverURL + "/PublicApi/" + self.interfaces[interfaceNumberInArray] + ".svc?wsdl")
+        try:
+            self.currentInterfacenumberInArray = interfaceNumberInArray
+            self.client = suds.client.Client(self.serverURL + "/PublicApi/" + self.interfaces[interfaceNumberInArray] + ".svc?wsdl")
+        except URLError as e:
+            print('Сервер недоступен. Убедитесь, что URL корректен и сервер доступен.')
+            raise e;
 
     def authorization(self, login, password):
         '''
@@ -37,88 +45,52 @@ class ClientBM:
         token = UsernameToken(login, password)
         security.tokens.append(token)
         self.client.set_options(wsse=security)
-        
-    def createUser(self, userInfo, usersCompanyId, useDefaultEmail):
-        '''
-        Запуск этого метода только после запуска метода startWorkWithInterface с параметром 1 
-        (и соотв., после метода authorization)
-        userInfo - словарь с информацией о пользователе
-        '''
-        ArrayOfUserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto')
-        UserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto')
-        Company = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto.Company')
-        print(userInfo)
-        UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
-        UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
-        UserCreationCommandDto.Blocked = userInfo['Blocked']
-        Company.Id = usersCompanyId
-        UserCreationCommandDto.Company = Company
-        if useDefaultEmail:
-            UserCreationCommandDto.Email = self.defaultEmail
-        else:
-            UserCreationCommandDto.Email = userInfo['Email']
-        UserCreationCommandDto.FirstName = userInfo['FirstName']
-        UserCreationCommandDto.LastName = userInfo['LastName']
-        UserCreationCommandDto.Phone = userInfo['Phone']
-        UserCreationCommandDto.Position = userInfo['Position']
-        
-        ArrayOfUserCreationCommandDto.UserCreationCommandDto.append(UserCreationCommandDto)
-        
-        try:
-            getInfo = self.client.service.Create(ArrayOfUserCreationCommandDto)
-            #print(getInfo)
-        except WebFault as e:
-            print(e)
+
+#=========================================================
+# МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
 
     def getCompanyShortName(self):
         return str(input('Введите короткое имя компании, с которой будет построено дальнейшее взаимодействие: '))
 
-    def getDecisionAboutDefaultEmail(self):
-        return bool(input('Использовать стандартный email для всех пользователей - ' + self.defaultEmail + 
-                                     '?.\n Да - 1, нет - 0. : '))
-            
-    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId, useDefaultEmail):
-        '''
-        arrayOfUserInfoDict - массив словарей с информацией о пользователях для их создания
-        '''
-        for userInfo in arrayOfUserInfoDict:
-            self.createUser(userInfo, usersCompanyId, useDefaultEmail)
+    def getCompanyIdByItsShortName(self, companyShortName, login, password):
+        self.startWorkWithInterface(0)
+        self.authorization(login, password)
+        CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
+        CompanySearchCriteriaDto.ShortNameToken = companyShortName
+        try:
+            companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
+            if companyInfo == '':
+                raise Exception('Компании с таким именем нет.')
+            return companyInfo.CompanyDto[0].Id
+        except WebFault as e:
+            print(e)
 
-    def createUsersFromExcelController(self, excelFilePathPlusName, login, password, defaultPassword):
+    def getHoldingIdByCompanyShortName(self, companyShortName, login, password):
         '''
-        Создание пользователей по информации из excel.
-        Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
+        Метод для вытягивания ID холдинга
+        Входные параметры - короткое название компании (любой)
         '''
-        companyShortName = self.getCompanyShortName()
-        usersCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
-        self.startWorkWithInterface(interfaceNumberInArray=1)
+        self.startWorkWithInterface(0)
         self.authorization(login, password)
-        useDefaultEmail = self.getDecisionAboutDefaultEmail()
-        arrayOfDictWithUsersInfo = self.workWithUsersExcelController(excelFilePathPlusName, defaultPassword)
-        self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId, useDefaultEmail)
+        CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
+        CompanySearchCriteriaDto.ShortNameToken = companyShortName
+        try:
+            companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
+            if companyInfo == '':
+                raise Exception('Компании с таким именем нет.')
+            return companyInfo.CompanyDto[0].Holding.Id
+        except WebFault as e:
+            print(e)
 
-    def createCompanyFromExcelController(self, excelFilePathPlusName, login, password):
+    def getHeadsOfandSecretariesFromExcel(self):
         '''
-        Создание компаниии по информации из excel.
-        Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
+        Из соответствующего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
         '''
-        companyShortName = self.getCompanyShortName()
-        holdingId = self.getHoldingIdByCompanyShortName(companyShortName, login, password)
-        self.startWorkWithInterface(interfaceNumberInArray=0)
-        self.authorization(login, password)
-        arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
-        self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
-            
-    def createCBFromExcelController(self, excelFilePathPlusName, login, password):
-        '''
-        Создание КО по информации из excel.
-        Включает начало работы с интерфейсом по работе (бог тафтологии) с КО, авторизацию и т.д.
-        '''
-        CBCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
-        self.startWorkWithInterface(interfaceNumberInArray=2)
-        self.authorization(login, password)
-        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
-        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId)
+        listFile = readList('РОЛИ')
+        #ДОПИСАТЬ
+    
+#=========================================================
+# МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
 
     def openExcelFile(self, filePathPlusName):
         self.excelFile = xlrd.open_workbook(filePathPlusName)
@@ -157,13 +129,51 @@ class ClientBM:
             pass
         return arrayWithInfo
 
-    def getHeadsOfandSecretariesFromExcel(self):
-        '''
-        Из соответствубщего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
-        '''
-        listFile = readList('РОЛИ')
-        #ДОПИСАТЬ
+#=========================================================
+# МЕТОДЫ ДЛЯ СОЗДАНИЯ USER
 
+    def createUser(self, userInfo, usersCompanyId, useDefaultEmail):
+        '''
+        Запуск этого метода только после запуска метода startWorkWithInterface с параметром 1 
+        (и соотв., после метода authorization)
+        userInfo - словарь с информацией о пользователе
+        '''
+        ArrayOfUserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto')
+        UserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto')
+        Company = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto.Company')
+        print(userInfo)
+        UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
+        UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
+        UserCreationCommandDto.Blocked = userInfo['Blocked']
+        Company.Id = usersCompanyId
+        UserCreationCommandDto.Company = Company
+        if useDefaultEmail:
+            UserCreationCommandDto.Email = self.defaultEmail
+        else:
+            UserCreationCommandDto.Email = userInfo['Email']
+        UserCreationCommandDto.FirstName = userInfo['FirstName']
+        UserCreationCommandDto.LastName = userInfo['LastName']
+        UserCreationCommandDto.Phone = userInfo['Phone']
+        UserCreationCommandDto.Position = userInfo['Position']
+        
+        ArrayOfUserCreationCommandDto.UserCreationCommandDto.append(UserCreationCommandDto)
+        
+        try:
+            getInfo = self.client.service.Create(ArrayOfUserCreationCommandDto)
+            #print(getInfo)
+        except WebFault as e:
+            print(e)
+
+    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId, useDefaultEmail):
+        '''
+        arrayOfUserInfoDict - массив словарей с информацией о пользователях для их создания
+        '''
+        for userInfo in arrayOfUserInfoDict:
+            self.createUser(userInfo, usersCompanyId, useDefaultEmail)
+
+    def getDecisionAboutDefaultEmail(self):
+        return bool(input('Использовать стандартный email для всех пользователей - ' + self.defaultEmail + 
+                                     '?.\n Да - 1, нет - 0. : '))
 
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
         arrayOfDictWithUsersInfo = []
@@ -175,81 +185,27 @@ class ClientBM:
                  })
         return arrayOfDictWithUsersInfo
 
-    def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
-        arrayOfDictWithCBInfo = []
-        j = 1
-        for x in arrayWithCBInfo:
-            arrayOfDictWithCBInfo.append({
-                    'FullName': x[2], 'ShortName': x[4], 'ParentId': None, 'HeadOfId': None,
-                    'Order': j, 'CompanyId': None, 'QualifiedMajority': qualifiedCBUsersCount,
-                    'Secretary': None, 'ShortDescription': x[9]
-
-                })
-            j += 1
-        return arrayOfDictWithCBInfo
-
-    def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
-        arrayOfDictWithCompanyInfo = []
-        arrayOfDictWithCompanyInfo.append({
-                    'AddressBuildingNumber': arrayWithCompanyInfo[10][2], 'AddressCity': arrayWithCompanyInfo[9][2],
-                    'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': int(arrayWithCompanyInfo[7][2]),
-                    'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[0][2],
-                    'holdingId': None, 'Phone': arrayWithCompanyInfo[5][2],
-                    'PostBuildingNumber': arrayWithCompanyInfo[15][2], 'PostCity': arrayWithCompanyInfo[14][2],
-                    'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': int(arrayWithCompanyInfo[12][2]),
-                    'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
-                    'UrlSite': arrayWithCompanyInfo[3][2]
-                })
-        return arrayOfDictWithCompanyInfo
-
     def workWithUsersExcelController(self, excelFilePathPlusName, defaultPassword):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='ПОЛЬЗОВАТЕЛИ')
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
         return self.createArrayOfDictWithUsersInfo(arrayWithInfo, defaultPassword)
 
-    def workWithCompanyExcelController(self, excelFilePathPlusName):
-        self.openExcelFile(excelFilePathPlusName)
-        excelList = self.readList(listName='О КОМПАНИИ')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
-        return self.createArrayWithCompanyInfo(arrayWithInfo)
-
-    def workWithCBExcelController(self, excelFilePathPlusName):
-        self.openExcelFile(excelFilePathPlusName)
-        excelList = self.readList(listName='КО')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
-        return self.createArrayOfDictWithCBInfo(arrayWithInfo)
-        
-    def getCompanyIdByItsShortName(self, companyShortName, login, password):
-        self.startWorkWithInterface(0)
-        self.authorization(login, password)
-        CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
-        CompanySearchCriteriaDto.ShortNameToken = companyShortName
-        try:
-            companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
-            if companyInfo == '':
-                raise Exception('Компании с таким именем нет.')
-            return companyInfo.CompanyDto[0].Id
-        except WebFault as e:
-            print(e)
-
-    def getHoldingIdByCompanyShortName(self, companyShortName, login, password):
+    def createUsersFromExcelController(self, excelFilePathPlusName, login, password, defaultPassword):
         '''
-        Метод для вытягивания ID холдинга
-        Входные параметры - короткое название компании (любой)
+        Создание пользователей по информации из excel.
+        Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
         '''
-        self.startWorkWithInterface(0)
+        companyShortName = self.getCompanyShortName()
+        usersCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
+        self.startWorkWithInterface(interfaceNumberInArray=1)
         self.authorization(login, password)
-        CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
-        CompanySearchCriteriaDto.ShortNameToken = companyShortName
-        try:
-            companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
-            if companyInfo == '':
-                raise Exception('Компании с таким именем нет.')
-            return companyInfo.CompanyDto[0].Holding.Id
-        except WebFault as e:
-            print(e)
+        useDefaultEmail = self.getDecisionAboutDefaultEmail()
+        arrayOfDictWithUsersInfo = self.workWithUsersExcelController(excelFilePathPlusName, defaultPassword)
+        self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId, useDefaultEmail)
 
+#=========================================================
+# МЕТОДЫ ДЛЯ СОЗДАНИЯ КОМПАНИИ
 
     def createCompany(self, companyInfo, holdingId):
         '''
@@ -285,11 +241,42 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
-        for CBInfo in arrayOfDictWithCBInfo:
-            self.createCollegialBody(CBInfo, CBCompanyId, headOfId, secretaryId)
+    def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
+        arrayOfDictWithCompanyInfo = []
+        arrayOfDictWithCompanyInfo.append({
+                    'AddressBuildingNumber': arrayWithCompanyInfo[10][2], 'AddressCity': arrayWithCompanyInfo[9][2],
+                    'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': int(arrayWithCompanyInfo[7][2]),
+                    'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[0][2],
+                    'holdingId': None, 'Phone': arrayWithCompanyInfo[5][2],
+                    'PostBuildingNumber': arrayWithCompanyInfo[15][2], 'PostCity': arrayWithCompanyInfo[14][2],
+                    'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': int(arrayWithCompanyInfo[12][2]),
+                    'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
+                    'UrlSite': arrayWithCompanyInfo[3][2]
+                })
+        return arrayOfDictWithCompanyInfo
 
-    def createCollegialBody(self, collegialBodyInfo, holdingId, CBCompanyId, , headOfId, secretaryId):
+    def workWithCompanyExcelController(self, excelFilePathPlusName):
+        self.openExcelFile(excelFilePathPlusName)
+        excelList = self.readList(listName='О КОМПАНИИ')
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
+        return self.createArrayWithCompanyInfo(arrayWithInfo)
+
+    def createCompanyFromExcelController(self, excelFilePathPlusName, login, password):
+        '''
+        Создание компаниии по информации из excel.
+        Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
+        '''
+        companyShortName = self.getCompanyShortName()
+        holdingId = self.getHoldingIdByCompanyShortName(companyShortName, login, password)
+        self.startWorkWithInterface(interfaceNumberInArray=0)
+        self.authorization(login, password)
+        arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
+        self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
+
+#=========================================================
+# МЕТОДЫ ДЛЯ СОЗДАНИЯ КОЛЛЕГИАЛЬНОГО ОРГАНА
+            
+    def createCollegialBody(self, collegialBodyInfo, holdingId, CBCompanyId, headOfId, secretaryId):
         '''
         Создание Коллегиального Органа, опираясь на информацию из входного значения - collegialBodyInfo
         После создания пользователей лучше, т.к. тут уже определяется секретарь
@@ -335,9 +322,43 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
+    def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
+        for CBInfo in arrayOfDictWithCBInfo:
+            self.createCollegialBody(CBInfo, CBCompanyId, headOfId, secretaryId)
+
+    def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
+        arrayOfDictWithCBInfo = []
+        j = 1
+        for x in arrayWithCBInfo:
+            arrayOfDictWithCBInfo.append({
+                    'FullName': x[2], 'ShortName': x[4], 'ParentId': None, 'HeadOfId': None,
+                    'Order': j, 'CompanyId': None, 'QualifiedMajority': qualifiedCBUsersCount,
+                    'Secretary': None, 'ShortDescription': x[9]
+
+                })
+            j += 1
+        return arrayOfDictWithCBInfo
+
+    def workWithCBExcelController(self, excelFilePathPlusName):
+        self.openExcelFile(excelFilePathPlusName)
+        excelList = self.readList(listName='КО')
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
+        return self.createArrayOfDictWithCBInfo(arrayWithInfo)
+
+    def createCBFromExcelController(self, excelFilePathPlusName, login, password):
+        '''
+        Создание КО по информации из excel.
+        Включает начало работы с интерфейсом по работе (бог тафтологии) с КО, авторизацию и т.д.
+        '''
+        CBCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
+        self.startWorkWithInterface(interfaceNumberInArray=2)
+        self.authorization(login, password)
+        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
+        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId)
+
 
 '''
-ПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН (это пока, надо сделать привязку к флажкам)):
+ПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):
 - адрес сервера BM
 - путь к excel файлу (с расширением и именем самого файла)
 - логин для входа на сервер BM
@@ -347,15 +368,19 @@ class ClientBM:
 
 
 if __name__ == '__main__':
-    print('Старт работы скрипта.')
-    sys.argv = sys.argv[1:]
-    url = sys.argv[0]
-    clientBM = ClientBM(url)
-    excelFilePathPlusName = sys.argv[1]
-    login = sys.argv[2]
-    password = sys.argv[3]
-    defaultPassword = sys.argv[4]
-    #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
-    clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
-    print('Конец работы скрипта.')
-    #raw_input()
+    try:
+        print('Старт работы скрипта.')
+        sys.argv = sys.argv[1:]
+        url = sys.argv[0]
+        clientBM = ClientBM(url)
+        excelFilePathPlusName = sys.argv[1]
+        login = sys.argv[2]
+        password = sys.argv[3]
+        defaultPassword = sys.argv[4]
+        #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
+        clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
+        print('Конец работы скрипта.')
+        #raw_input()
+    except Exception as e:
+        print('Что-то пошло не так.')
+        #print(e.args)
