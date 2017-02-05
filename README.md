@@ -14,5 +14,5 @@ pip install suds-jurko
 * [xlrd](https://pypi.python.org/pypi/xlrd) - this lib we'll use for excel files parsing.
 You can install it using pip too
 ```
-pip install xlrd"
+pip install xlrd
 ```
