@@ -13,6 +13,9 @@ class ClientBM:
     client = None
     currentInterfacenumberInArray = int()
     excelFile = None
+    login = None
+    password = None
+    companyWorkWithShortName = None
     defaultEmail = 'demoboardmaps@yandex.ru'
     interfaces = ['CompanyManagementService','UserManagementService','CollegialBodyManagementService',
                  'MeetingManagementService','MeetingMemberManagementService','IssueManagementService'
@@ -37,26 +40,34 @@ class ClientBM:
             print('Сервер недоступен. Убедитесь, что URL корректен и сервер доступен.')
             raise e;
 
-    def authorization(self, login, password):
+    def setLoginAndPassword(self, login, password):
+        self.login = login
+        self.password = password
+
+    def authorization(self):
         '''
         После запуска метода startWorkWithInterface
         '''
         security = Security()
-        token = UsernameToken(login, password)
+        token = UsernameToken(self.login, self.password)
         security.tokens.append(token)
         self.client.set_options(wsse=security)
+        try:
+            self.client.service.Get()
+        except WebFault as e:
+            print('Неверный логин/пароль.')
+            raise(e)
+        except Exception as e:
+            pass
 
 #=========================================================
 # МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
 
-    def getCompanyShortName(self):
-        return str(input('Введите короткое имя компании, с которой будет построено дальнейшее взаимодействие: '))
-
-    def getCompanyIdByItsShortName(self, companyShortName, login, password):
+    def getCompanyIdByItsShortName(self):
         self.startWorkWithInterface(0)
-        self.authorization(login, password)
+        self.authorization()
         CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
-        CompanySearchCriteriaDto.ShortNameToken = companyShortName
+        CompanySearchCriteriaDto.ShortNameToken = self.companyWorkWithShortName
         try:
             companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
             if companyInfo == '':
@@ -65,13 +76,16 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def getHoldingIdByCompanyShortName(self, companyShortName, login, password):
+    def getCompanyShortName(self):
+        return str(input('Введите короткое имя любой компании, для получения Id Холдинга: '))
+
+    def getHoldingIdByCompanyShortName(self, companyShortName):
         '''
         Метод для вытягивания ID холдинга
         Входные параметры - короткое название компании (любой)
         '''
         self.startWorkWithInterface(0)
-        self.authorization(login, password)
+        self.authorization()
         CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
         CompanySearchCriteriaDto.ShortNameToken = companyShortName
         try:
@@ -81,19 +95,16 @@ class ClientBM:
             return companyInfo.CompanyDto[0].Holding.Id
         except WebFault as e:
             print(e)
-
-    def getHeadsOfandSecretariesFromExcel(self):
-        '''
-        Из соответствующего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
-        '''
-        listFile = readList('РОЛИ')
-        #ДОПИСАТЬ
     
 #=========================================================
 # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
 
     def openExcelFile(self, filePathPlusName):
-        self.excelFile = xlrd.open_workbook(filePathPlusName)
+        try:
+            self.excelFile = xlrd.open_workbook(filePathPlusName)
+        except FileNotFoundError as e:
+            print('Файл с таким именем не существует в данной директории.')
+            raise e
 
     def readList(self, listName):
         '''
@@ -110,6 +121,7 @@ class ClientBM:
         англ -- надо уточнить
         '''
         return self.excelFile.sheet_by_name(listName)
+        
     
     def readInfoFromList(self, listFile, startInfoPosition):
         '''
@@ -117,7 +129,7 @@ class ClientBM:
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
         Но не хочется так просто выкидывать часть информации -- вдруг пригодится потом
 
-        Для пользователей и КО startInfoPosition = 4, для компании - startInfoPosition = 3.
+        Для пользователей startInfoPosition = 4, для компании - startInfoPosition = 3.
         '''
         arrayWithInfo = []
         i = startInfoPosition
@@ -132,7 +144,7 @@ class ClientBM:
 #=========================================================
 # МЕТОДЫ ДЛЯ СОЗДАНИЯ USER
 
-    def createUser(self, userInfo, usersCompanyId, useDefaultEmail):
+    def createUser(self, userInfo, usersCompanyId):
         '''
         Запуск этого метода только после запуска метода startWorkWithInterface с параметром 1 
         (и соотв., после метода authorization)
@@ -141,13 +153,13 @@ class ClientBM:
         ArrayOfUserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto')
         UserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto')
         Company = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto.Company')
-        print(userInfo)
+
         UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
         UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
         UserCreationCommandDto.Blocked = userInfo['Blocked']
         Company.Id = usersCompanyId
         UserCreationCommandDto.Company = Company
-        if useDefaultEmail:
+        if userInfo['Email'] == '':
             UserCreationCommandDto.Email = self.defaultEmail
         else:
             UserCreationCommandDto.Email = userInfo['Email']
@@ -155,7 +167,8 @@ class ClientBM:
         UserCreationCommandDto.LastName = userInfo['LastName']
         UserCreationCommandDto.Phone = userInfo['Phone']
         UserCreationCommandDto.Position = userInfo['Position']
-        
+        #UserCreationCommandDto.PhotoImageSource = "materials/default_picture.png" # не работает :(
+
         ArrayOfUserCreationCommandDto.UserCreationCommandDto.append(UserCreationCommandDto)
         
         try:
@@ -164,16 +177,12 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId, useDefaultEmail):
+    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId):
         '''
         arrayOfUserInfoDict - массив словарей с информацией о пользователях для их создания
         '''
         for userInfo in arrayOfUserInfoDict:
-            self.createUser(userInfo, usersCompanyId, useDefaultEmail)
-
-    def getDecisionAboutDefaultEmail(self):
-        return bool(input('Использовать стандартный email для всех пользователей - ' + self.defaultEmail + 
-                                     '?.\n Да - 1, нет - 0. : '))
+            self.createUser(userInfo, usersCompanyId)
 
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
         arrayOfDictWithUsersInfo = []
@@ -191,18 +200,16 @@ class ClientBM:
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
         return self.createArrayOfDictWithUsersInfo(arrayWithInfo, defaultPassword)
 
-    def createUsersFromExcelController(self, excelFilePathPlusName, login, password, defaultPassword):
+    def createUsersFromExcelController(self, excelFilePathPlusName, defaultPassword):
         '''
         Создание пользователей по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
         '''
-        companyShortName = self.getCompanyShortName()
-        usersCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
+        usersCompanyId = self.getCompanyIdByItsShortName()
         self.startWorkWithInterface(interfaceNumberInArray=1)
-        self.authorization(login, password)
-        useDefaultEmail = self.getDecisionAboutDefaultEmail()
+        self.authorization()
         arrayOfDictWithUsersInfo = self.workWithUsersExcelController(excelFilePathPlusName, defaultPassword)
-        self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId, useDefaultEmail)
+        self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId)
 
 #=========================================================
 # МЕТОДЫ ДЛЯ СОЗДАНИЯ КОМПАНИИ
@@ -253,6 +260,7 @@ class ClientBM:
                     'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
                     'UrlSite': arrayWithCompanyInfo[3][2]
                 })
+        self.companyWorkWithShortName = arrayWithCompanyInfo[1][2]
         return arrayOfDictWithCompanyInfo
 
     def workWithCompanyExcelController(self, excelFilePathPlusName):
@@ -261,15 +269,15 @@ class ClientBM:
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
         return self.createArrayWithCompanyInfo(arrayWithInfo)
 
-    def createCompanyFromExcelController(self, excelFilePathPlusName, login, password):
+    def createCompanyFromExcelController(self, excelFilePathPlusName):
         '''
         Создание компаниии по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
         '''
         companyShortName = self.getCompanyShortName()
-        holdingId = self.getHoldingIdByCompanyShortName(companyShortName, login, password)
+        holdingId = self.getHoldingIdByCompanyShortName(companyShortName)
         self.startWorkWithInterface(interfaceNumberInArray=0)
-        self.authorization(login, password)
+        self.authorization()
         arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
         self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
 
@@ -322,6 +330,14 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
+    def getHeadsOfandSecretariesFromExcel(self):
+        '''
+        Из соответствующего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
+        '''
+        listFile = readList('РОЛИ')
+        # ДОПИСАТЬ!
+        
+
     def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
         for CBInfo in arrayOfDictWithCBInfo:
             self.createCollegialBody(CBInfo, CBCompanyId, headOfId, secretaryId)
@@ -345,14 +361,14 @@ class ClientBM:
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
         return self.createArrayOfDictWithCBInfo(arrayWithInfo)
 
-    def createCBFromExcelController(self, excelFilePathPlusName, login, password):
+    def createCBFromExcelController(self, excelFilePathPlusName):
         '''
         Создание КО по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с КО, авторизацию и т.д.
         '''
-        CBCompanyId = self.getCompanyIdByItsShortName(companyShortName, login, password)
+        CBCompanyId = self.getCompanyIdByItsShortName(companyShortName)
         self.startWorkWithInterface(interfaceNumberInArray=2)
-        self.authorization(login, password)
+        self.authorization()
         arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
         self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId)
 
@@ -376,11 +392,14 @@ if __name__ == '__main__':
         excelFilePathPlusName = sys.argv[1]
         login = sys.argv[2]
         password = sys.argv[3]
+        clientBM.setLoginAndPassword(login, password)
         defaultPassword = sys.argv[4]
-        #clientBM.createUsersFromExcelController(excelFilePathPlusName, login, password, defaultPassword)
-        clientBM.createCompanyFromExcelController(excelFilePathPlusName, login, password)
+
+        clientBM.createCompanyFromExcelController(excelFilePathPlusName)
+        clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
+
         print('Конец работы скрипта.')
         #raw_input()
     except Exception as e:
-        print('Что-то пошло не так.')
-        #print(e.args)
+        print('Что-то пошло не так :(')
+        print(e)
