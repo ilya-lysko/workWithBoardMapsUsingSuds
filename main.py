@@ -15,6 +15,7 @@ class ClientBM:
     excelFile = None
     login = None
     password = None
+    userToCreateAmount = None
     companyWorkWithShortName = None
     defaultEmail = 'demoboardmaps@yandex.ru'
     interfaces = ['CompanyManagementService','UserManagementService','CollegialBodyManagementService',
@@ -93,6 +94,25 @@ class ClientBM:
             if companyInfo == '':
                 raise Exception('Компании с таким именем нет.')
             return companyInfo.CompanyDto[0].Holding.Id
+        except WebFault as e:
+            print(e)
+
+    def getUserIdByHisFI(self, userFI):
+        '''
+        Получение Id пользователя по его фамилии и имени.
+        Формат userFI -- String. Преобразования с ней -- тут.
+        Нужно для заполнения поля Id Председателя при создании КО.
+        '''
+        self.startWorkWithInterface(1)
+        self.authorization();
+
+        UserSearchCriteriaDto = t.client.factory.create('ns0:UserSearchCriteriaDto')
+        UserSearchCriteriaDto.LastNameToken = userFI.split()[0]
+        UserSearchCriteriaDto.FirstNameToken = userFI.split()[1]
+
+        try: # Считаем, что результатом будет только один пользователь.
+            userInfo = t.client.service.Find(q)
+            return userInfo.UserDto[0].Id
         except WebFault as e:
             print(e)
     
@@ -186,6 +206,7 @@ class ClientBM:
         '''
         for userInfo in arrayOfUserInfoDict:
             self.createUser(userInfo, usersCompanyId)
+        self.userToCreateAmount = len(arrayOfUserInfoDict)
 
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
         arrayOfDictWithUsersInfo = []
@@ -333,26 +354,35 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def getHeadsOfandSecretariesFromExcel(self, CBAmount):
+    def getUserRolesInCBs(self, CBAmount):
         '''
         Создание структуры данных с ролями всех пользователей во всех КО
         '''
-        def createDictWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount):
+        def createDictWithCBInfoWithStructure(self, arrayWithCBRolesWithNoStructure, CBAmount):
             '''
             Возвращает "словарь словарей" с информацией о ролях всех пользователей во всех КО
             '''
-            dictWithSctructuredCBInfo = {}
-            for rowWithUser in a[1:]:
+            dictWithCBUserRoles = {}
+            for i in range(CBAmount):
                 d_ = {}
-                for i in range(CBAmount):
-                    d_.update({a[0][i+2]: rowWithUser[2:][i]})
-                dictWithSctructuredCBInfo.update({rowWithUser[1]: d1})
-            return dictWithSctructuredCBInfo
+                for j in range(self.userToCreateAmount):
+                    d_.update({arrayWithCBRolesWithNoStructure[j+1][1]: arrayWithCBRolesWithNoStructure[j+1][2+i]})
+                dictWithCBUserRoles.update({arrayWithCBRolesWithNoStructure[0][i+2]: d_})
+            return dictWithCBUserRoles
 
-        listWithCBInfo = readList('РОЛИ')
-        arrayWithCBRolesWithNoStructure = readInfoFromList(listWithCBInfo, startInfoPosition=2, isCB=True)
-        dictWithSctructuredCBInfo = createArrayWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount)
-        return dictWithSctructuredCBInfo
+        listWithCBInfo = self.readList('РОЛИ')
+        arrayWithCBRolesWithNoStructure = self.readInfoFromList(listWithCBInfo, startInfoPosition=2, isCB=True)
+        dictWithCBUserRoles = self.createArrayWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount)
+        return dictWithCBUserRoles
+
+    def getHeadOfAndSecretary(self, dictWithCBUserRoles):
+        '''
+        "Конвертирование" "словаря словарей" в формат:
+            - убрать участников (всевозможных типов)
+            - вместо имен пользователей -- Id пользователя
+        '''
+        
+        # ДОПИСАТЬ
 
     def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
         for CBInfo in arrayOfDictWithCBInfo:
