@@ -123,18 +123,21 @@ class ClientBM:
         return self.excelFile.sheet_by_name(listName)
         
     
-    def readInfoFromList(self, listFile, startInfoPosition):
+    def readInfoFromList(self, listFile, startInfoPosition, isCB=False):
         '''
         Создается массив со ВСЕЙ информацией о сущности из таблицы
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
         Но не хочется так просто выкидывать часть информации -- вдруг пригодится потом
 
-        Для пользователей startInfoPosition = 4, для компании - startInfoPosition = 3.
+        Для пользователей startInfoPosition = 4, для компании - startInfoPosition = 3, для КО - startInfoPosition = 2.
         '''
         arrayWithInfo = []
         i = startInfoPosition
+        i_y = 2
+        if isCB:
+            i_y = 3
         try:
-            while listFile.row_values(i)[2] != '':
+            while listFile.row_values(i)[i_y] != '':
                 arrayWithInfo.append(listFile.row_values(i))
                 i += 1
         except IndexError as e:
@@ -330,13 +333,26 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def getHeadsOfandSecretariesFromExcel(self):
+    def getHeadsOfandSecretariesFromExcel(self, CBAmount):
         '''
-        Из соответствующего листа вытягиваю председателя и секретаря для каждого КО (если секретарей несколько беру первого)
+        Создание структуры данных с ролями всех пользователей во всех КО
         '''
-        listFile = readList('РОЛИ')
-        # ДОПИСАТЬ!
-        
+        def createDictWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount):
+            '''
+            Возвращает "словарь словарей" с информацией о ролях всех пользователей во всех КО
+            '''
+            dictWithSctructuredCBInfo = {}
+            for rowWithUser in a[1:]:
+                d_ = {}
+                for i in range(CBAmount):
+                    d_.update({a[0][i+2]: rowWithUser[2:][i]})
+                dictWithSctructuredCBInfo.update({rowWithUser[1]: d1})
+            return dictWithSctructuredCBInfo
+
+        listWithCBInfo = readList('РОЛИ')
+        arrayWithCBRolesWithNoStructure = readInfoFromList(listWithCBInfo, startInfoPosition=2, isCB=True)
+        dictWithSctructuredCBInfo = createArrayWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount)
+        return dictWithSctructuredCBInfo
 
     def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
         for CBInfo in arrayOfDictWithCBInfo:
