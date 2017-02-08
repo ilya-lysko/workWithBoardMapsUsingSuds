@@ -1,11 +1,15 @@
 import sys
 import re
+
 import suds
 from suds import client
 from suds.sax.element import Element
 from suds.wsse import *
+
 import xlrd
 from urllib.error import URLError
+
+import logging
 
 class ClientBM:
     
@@ -29,6 +33,7 @@ class ClientBM:
 
     def __init__(self, serverURL):
         self.serverURL = serverURL
+        self.createLogFile()
         
     def startWorkWithInterface(self, interfaceNumberInArray):
         '''
@@ -37,8 +42,10 @@ class ClientBM:
         try:
             self.currentInterfacenumberInArray = interfaceNumberInArray
             self.client = suds.client.Client(self.serverURL + "/PublicApi/" + self.interfaces[interfaceNumberInArray] + ".svc?wsdl")
+            self.addNoteToLogFile('\n\nНачало работы с сервером %s' % self.serverURL)
         except URLError as e:
-            print('Сервер недоступен. Убедитесь, что URL корректен и сервер доступен.')
+            self.addNoteToLogFile('\n\nСбой подключения к серверу %s' % self.serverURL, warning=True)
+            self.addNoteToLogFile(e.args, warning=True)
             raise e;
 
     def setLoginAndPassword(self, login, password):
@@ -55,11 +62,12 @@ class ClientBM:
         self.client.set_options(wsse=security)
         try:
             self.client.service.Get()
+            self.addNoteToLogFile('Успешная авторизация.')
         except WebFault as e:
-            print('Неверный логин/пароль.')
+            self.addNoteToLogFile('Неверный логин/пароль.', warning=True)
             raise(e)
         except Exception as e:
-            pass
+            self.addNoteToLogFile(e.args, warning=True)
 
 #=========================================================
 # МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
@@ -115,15 +123,28 @@ class ClientBM:
             return userInfo.UserDto[0].Id
         except WebFault as e:
             print(e)
-    
+   
+#=========================================================
+# МЕТОДЫ ДЛЯ ЛОГИРОВАНИЯ
+
+    def createLogFile(self):
+        logging.basicConfig(filename='log.log',level=logging.INFO, format='%(asctime)s %(message)s')
+
+    def addNoteToLogFile(self, message, warning=False):
+        if warning:
+            logging.warning(message)
+        else:
+            logging.info(message)
+
 #=========================================================
 # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
 
     def openExcelFile(self, filePathPlusName):
         try:
             self.excelFile = xlrd.open_workbook(filePathPlusName)
+            self.addNoteToLogFile('Открыт excel файл %s' % filePathPlusName)
         except FileNotFoundError as e:
-            print('Файл с таким именем не существует в данной директории.')
+            self.addNoteToLogFile('Файл %s не найден.' % filePathPlusName, warning=True)
             raise e
 
     def readList(self, listName):
@@ -196,9 +217,9 @@ class ClientBM:
         
         try:
             getInfo = self.client.service.Create(ArrayOfUserCreationCommandDto)
-            #print(getInfo)
+            self.addNoteToLogFile('Создан пользователь. %s' % getInfo)
         except WebFault as e:
-            print(e)
+            self.addNoteToLogFile(e.args, warning=True)
 
     def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId):
         '''
@@ -268,9 +289,9 @@ class ClientBM:
 
         try:
             getInfo = self.client.service.Create(ArrayOfCompanyCreationCommandDto)
-            #print(getInfo)
+            self.addNoteToLogFile('Создана компания. %s' % getInfo)
         except WebFault as e:
-            print(e)
+            self.addNoteToLogFile(e.args, warning=True)
 
     def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
         arrayOfDictWithCompanyInfo = []
@@ -363,9 +384,9 @@ class ClientBM:
 
         try:
             getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
-            #print(getInfo)
+            self.addNoteToLogFile('Создан колегиальный орган. %s' % getInfo)
         except WebFault as e:
-            print(e)
+            self.addNoteToLogFile(e.args, warning=True)
 
     def getHeadOfAndSecretary(self, CBAmount):
         '''
@@ -455,7 +476,6 @@ class ClientBM:
 
 if __name__ == '__main__':
     try:
-        print('Старт работы скрипта.')
         sys.argv = sys.argv[1:]
         url = sys.argv[0]
         clientBM = ClientBM(url)
@@ -468,8 +488,5 @@ if __name__ == '__main__':
         clientBM.createCompanyFromExcelController(excelFilePathPlusName)
         clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
 
-        print('Конец работы скрипта.')
-        #raw_input()
     except Exception as e:
-        print('Что-то пошло не так :(')
-        print(e)
+        clientBM.addNoteToLogFile(e.args, warning=True)
