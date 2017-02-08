@@ -306,14 +306,27 @@ class ClientBM:
         self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
 
 #=========================================================
-# МЕТОДЫ ДЛЯ СОЗДАНИЯ КОЛЛЕГИАЛЬНОГО ОРГАНА
-            
-    def createCollegialBody(self, collegialBodyInfo, holdingId, CBCompanyId, headOfId, secretaryId):
+# МЕТОДЫ ДЛЯ СОЗДАНИЯ КОЛЛЕГИАЛЬНОГО ОРГАНА {НЕ ДОДЕЛАН. НЕСООТВЕТСТВИЕ API И ДОКУМЕНТАЦИИ К НЕМУ}
+
+    def createCollegialBody(self, collegialBodyInfo, holdingId, CBCompanyId, dictWithCBUserRoles):
         '''
         Создание Коллегиального Органа, опираясь на информацию из входного значения - collegialBodyInfo
         После создания пользователей лучше, т.к. тут уже определяется секретарь
         Соответственно, желательно, чтобы пользователь, которому планируется присвоить роль секретаря был создан
         '''
+        # Получим сначала ФИО председателя и секретаря данного КО
+        CBHeadAndSecretaryInfo = dictWithCBUserRoles[collegialBodyInfo['FullName']]
+
+        for k,v in CBHeadAndSecretaryInfo.items():
+            if v == 'СЕК':
+                secretaryOfCBName = k
+            elif v == 'ПРЕД':
+                headOfCBName = k
+
+        # Получим Id председателя и секретаря данного КО, основываясь на их ФИО
+        headOfCBId = getUserIdByHisFI(headOfCBName)
+        secretaryOfCBId = getUserIdByHisFI(secretaryOfCBName)
+
         ArrayOfCollegialBodyCreationCommandDto = client.factory.create('ns0:ArrayOfCollegialBodyCreationCommandDto')
         CollegialBodyCreationCommandDto = client.factory.create('ns0:CollegialBodyCreationCommandDto')
         AttendanceTypeEnumDto = client.factory.create('ns0:AttendanceTypeEnumDto')
@@ -325,13 +338,13 @@ class ClientBM:
 
         IdentityDtoParent.Id = collegialBodyInfo['ParentId']
         CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
-        LdapUserIdentityDtoHeadOf.Id = headOfId
+        LdapUserIdentityDtoHeadOf.Id = headOfCBId
         #LdapUserIdentityDtoHeadOf.LdapUsername = collegialBodyInfo['HeadOfName']
         CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
         IdentityDtoCompany.Id = CBCompanyId
         CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
-        # поля уже заполнены для полей ниже, которы закоменчены
-        # разобраться
+        # поля уже заполнены для полей ниже, которые закоменчены
+        # РАЗОБРАТЬСЯ
         #CollegialBodyTypeEnumDto.Executive = collegialBodyInfo['Executive']
         #CollegialBodyTypeEnumDto.ManagementBody = collegialBodyInfo['ManagementBody']
         #CollegialBodyTypeEnumDto.NotCorporate = collegialBodyInfo['NotCorporate']
@@ -344,7 +357,7 @@ class ClientBM:
         CollegialBodyCreationCommandDto.FullName = collegialBodyInfo['FullName']
         CollegialBodyCreationCommandDto.Order = collegialBodyInfo['Order']
         CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
-        CollegialBodyCreationCommandDto.Secretary = secretaryId
+        CollegialBodyCreationCommandDto.Secretary = secretaryOfCBId
         CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo['ShortDescription']
         CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo['ShortName']
 
@@ -354,13 +367,14 @@ class ClientBM:
         except WebFault as e:
             print(e)
 
-    def getUserRolesInCBs(self, CBAmount):
+    def getHeadOfAndSecretary(self, CBAmount):
         '''
         Создание структуры данных с ролями всех пользователей во всех КО
         '''
         def createDictWithCBInfoWithStructure(self, arrayWithCBRolesWithNoStructure, CBAmount):
             '''
-            Возвращает "словарь словарей" с информацией о ролях всех пользователей во всех КО
+            Возвращает "словарь словарей" с информацией о ролях всех пользователей во всех КО.
+            Конкретно для создания КО есть лишняя информация.
             '''
             dictWithCBUserRoles = {}
             for i in range(CBAmount):
@@ -370,23 +384,30 @@ class ClientBM:
                 dictWithCBUserRoles.update({arrayWithCBRolesWithNoStructure[0][i+2]: d_})
             return dictWithCBUserRoles
 
+        def getUsefulFormatFromDictWithCBUserRoles(self, dictWithCBUserRoles):
+            '''
+            "Конвертирование" "словаря словарей" в формат:
+                - убрать участников (всевозможных типов)
+                - вместо имен пользователей -- Id пользователя
+            '''
+            for i in dictWithCBUserRoles.keys():
+                b = []
+                for j in dictWithCBUserRoles[i]:
+                    if dictWithCBUserRoles[i][j] not in ['ПРЕД','СЕК']:
+                        b.append(j)
+                for k in b:
+                    dictWithCBUserRoles[i].pop(k)
+            return dictWithCBUserRoles
+
         listWithCBInfo = self.readList('РОЛИ')
         arrayWithCBRolesWithNoStructure = self.readInfoFromList(listWithCBInfo, startInfoPosition=2, isCB=True)
         dictWithCBUserRoles = self.createArrayWithCBInfoWithStructure(arrayWithCBRolesWithNoStructure, CBAmount)
+        dictWithCBUserRoles = getUsefulFormatFromDictWithCBUserRoles(dictWithCBUserRoles)
         return dictWithCBUserRoles
 
-    def getHeadOfAndSecretary(self, dictWithCBUserRoles):
-        '''
-        "Конвертирование" "словаря словарей" в формат:
-            - убрать участников (всевозможных типов)
-            - вместо имен пользователей -- Id пользователя
-        '''
-        
-        # ДОПИСАТЬ
-
-    def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId):
+    def createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, dictWithCBUserRoles):
         for CBInfo in arrayOfDictWithCBInfo:
-            self.createCollegialBody(CBInfo, CBCompanyId, headOfId, secretaryId)
+            self.createCollegialBody(CBInfo, CBCompanyId, dictWithCBUserRoles)
 
     def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
         arrayOfDictWithCBInfo = []
@@ -399,7 +420,7 @@ class ClientBM:
 
                 })
             j += 1
-        return arrayOfDictWithCBInfo
+        return arrayOfDictWithCBInfo, len(arrayOfDictWithCBInfo)
 
     def workWithCBExcelController(self, excelFilePathPlusName):
         self.openExcelFile(excelFilePathPlusName)
@@ -415,8 +436,11 @@ class ClientBM:
         CBCompanyId = self.getCompanyIdByItsShortName(companyShortName)
         self.startWorkWithInterface(interfaceNumberInArray=2)
         self.authorization()
-        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
-        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, headOfId, secretaryId)
+        arrayOfDictWithCBInfo, CBAmount = self.workWithCBExcelController(excelFilePathPlusName)
+        dictWithCBUserRoles = getHeadOfAndSecretary(CBAmount)
+        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, dictWithCBUserRoles)
+
+
 
 
 '''
