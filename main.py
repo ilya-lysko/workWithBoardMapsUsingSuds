@@ -164,7 +164,7 @@ class ClientBM:
         return self.excelFile.sheet_by_name(listName)
         
     
-    def readInfoFromList(self, listFile, startInfoPosition, isCB=False):
+    def readInfoFromList(self, listFile, startInfoPosition, isCB=False, isCompany=False):
         '''
         Создается массив со ВСЕЙ информацией о сущности из таблицы
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
@@ -177,6 +177,8 @@ class ClientBM:
         i_y = 2
         if isCB:
             i_y = 3
+        if isCompany:
+            i_y = 1
         try:
             while listFile.row_values(i)[i_y] != '':
                 arrayWithInfo.append(listFile.row_values(i))
@@ -311,7 +313,7 @@ class ClientBM:
     def workWithCompanyExcelController(self, excelFilePathPlusName):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='О КОМПАНИИ')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3, isCompany=True)
         return self.createArrayWithCompanyInfo(arrayWithInfo)
 
     def createCompanyFromExcelController(self, excelFilePathPlusName):
