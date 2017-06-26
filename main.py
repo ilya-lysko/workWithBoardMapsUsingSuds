@@ -18,8 +18,8 @@ class ClientBM:
     companyWorkWithShortName = None
     defaultEmail = 'demoboardmaps@yandex.ru'
     interfaces = ['CompanyManagementService', 'UserManagementService', 'CollegialBodyManagementService',
-                  'MeetingManagementService', 'MeetingMemberManagementService', 'IssueManagementService'
-        , 'DecisionProjectManagementService', 'InvitedMember2IssueManagementService',
+                  'MeetingManagementService', 'MeetingMemberManagementService', 'IssueManagementService',
+                'DecisionProjectManagementService', 'InvitedMember2IssueManagementService',
                   'SpokesPerson2IssueManagementService',
                   'MaterialManagementService', 'DocumentManagementService', 'InstructionManagementService']
 
@@ -65,8 +65,8 @@ class ClientBM:
         except Exception as e:
             self.addNoteToLogFile(e.args, warning=True)
 
-        # =========================================================
-        # МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
+    # =========================================================
+    # МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
 
     def getCompanyIdByItsShortName(self):
         self.startWorkWithInterface(0)
@@ -80,9 +80,6 @@ class ClientBM:
             return companyInfo.CompanyDto[0].Id
         except WebFault as e:
             self.addNoteToLogFile(e.args, warning=True)
-
-    def getCompanyShortName(self):
-        return str(input('Введите короткое имя любой компании, для получения Id Холдинга: '))
 
     def getHoldingIdByCompanyShortName(self, companyShortName):
         '''
@@ -101,7 +98,7 @@ class ClientBM:
         except WebFault as e:
             self.addNoteToLogFile(e.args, warning=True)
 
-    def getUserIdByHisFI(self, userFI):
+    def getUserIdByHisFI(self, userLastName):
         '''
         Получение Id пользователя по его фамилии и имени.
         Формат userFI -- String. Преобразования с ней -- тут.
@@ -111,8 +108,7 @@ class ClientBM:
         self.authorization()
 
         UserSearchCriteriaDto = self.client.factory.create('ns0:UserSearchCriteriaDto')
-        UserSearchCriteriaDto.LastNameToken = userFI.split()[0]
-        UserSearchCriteriaDto.FirstNameToken = userFI.split()[1]
+        UserSearchCriteriaDto.LastNameToken = userLastName
 
         try:  # Считаем, что результатом будет только один пользователь.
             userInfo = self.client.service.Find(UserSearchCriteriaDto)
@@ -120,8 +116,8 @@ class ClientBM:
         except WebFault as e:
             self.addNoteToLogFile(e.args, warning=True)
 
-        # =========================================================
-        # МЕТОДЫ ДЛЯ ЛОГИРОВАНИЯ
+    # =========================================================
+    # МЕТОДЫ ДЛЯ ЛОГИРОВАНИЯ
 
     def createLogFile(self):
         logging.basicConfig(filename='log.log', level=logging.INFO, format='%(asctime)s %(message)s')
@@ -134,8 +130,8 @@ class ClientBM:
             logging.info(message)
             #print("WARNING: " + message)
 
-        # =========================================================
-        # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
+    # =========================================================
+    # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
 
     def openExcelFile(self, filePathPlusName):
         try:
@@ -161,19 +157,15 @@ class ClientBM:
         '''
         return self.excelFile.sheet_by_name(listName)
 
-    def readInfoFromList(self, listFile, startInfoPosition, isCB=False):
+    def readInfoFromList(self, listFile, startInfoPosition, isCBRoles=False):
         '''
         Создается массив со ВСЕЙ информацией о сущности из таблицы
         Немного нерационально, т.к. можно сразу тут создать словарь с нужными ключами
         Но не хочется так просто выкидывать часть информации -- вдруг пригодится потом
-
-        Для пользователей startInfoPosition = 4, для компании - startInfoPosition = 3, для КО - startInfoPosition = 2.
         '''
         arrayWithInfo = []
         i = startInfoPosition
-        i_y = 2
-        if isCB:
-            i_y = 3
+        i_y = 2 - isCBRoles
         try:
             while listFile.row_values(i)[i_y] != '':
                 arrayWithInfo.append(listFile.row_values(i))
@@ -197,7 +189,7 @@ class ClientBM:
 
         UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
         UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
-        UserCreationCommandDto.Blocked = userInfo['Blocked']
+        UserCreationCommandDto.Blocked = False
         Company.Id = usersCompanyId
         UserCreationCommandDto.Company = Company
         if userInfo['Email'] == '':
@@ -206,8 +198,10 @@ class ClientBM:
             UserCreationCommandDto.Email = userInfo['Email']
         UserCreationCommandDto.FirstName = userInfo['FirstName']
         UserCreationCommandDto.LastName = userInfo['LastName']
+        UserCreationCommandDto.MiddleName = userInfo['MiddleName']
         UserCreationCommandDto.Phone = userInfo['Phone']
         UserCreationCommandDto.Position = userInfo['Position']
+        UserCreationCommandDto.Bio = userInfo['Bio']
         # UserCreationCommandDto.PhotoImageSource = "materials/default_picture.png" # не работает :(
 
         ArrayOfUserCreationCommandDto.UserCreationCommandDto.append(UserCreationCommandDto)
@@ -230,16 +224,16 @@ class ClientBM:
         arrayOfDictWithUsersInfo = []
         for x in arrayWithUsersInfo:
             arrayOfDictWithUsersInfo.append({
-                'BasicPassword': defaultPassword, 'BasicUsername': x[14], 'Blocked': False,
-                'Company': None, 'Email': x[11], 'FirstName': x[2].split()[1],
-                'LastName': x[2].split()[0], 'Phone': x[12], 'Position': x[9]
+                'BasicPassword': defaultPassword, 'BasicUsername': x[12], 'Bio': x[15],
+                'Email': x[8], 'FirstName': x[3],
+                'LastName': x[2], 'MiddleName': x[4], 'Phone': x[9], 'Position': x[10]
             })
         return arrayOfDictWithUsersInfo
 
     def workWithUsersExcelController(self, excelFilePathPlusName, defaultPassword):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='ПОЛЬЗОВАТЕЛИ')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=6)
         return self.createArrayOfDictWithUsersInfo(arrayWithInfo, defaultPassword)
 
     def createUsersFromExcelController(self, excelFilePathPlusName, defaultPassword):
@@ -293,12 +287,12 @@ class ClientBM:
     def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
         arrayOfDictWithCompanyInfo = []
         arrayOfDictWithCompanyInfo.append({
-            'AddressBuildingNumber': arrayWithCompanyInfo[10][2], 'AddressCity': arrayWithCompanyInfo[9][2],
-            'AddressCountry': arrayWithCompanyInfo[8][2], 'AddressIndex': int(arrayWithCompanyInfo[7][2]),
-            'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[0][2],
-            'holdingId': None, 'Phone': arrayWithCompanyInfo[5][2],
-            'PostBuildingNumber': arrayWithCompanyInfo[15][2], 'PostCity': arrayWithCompanyInfo[14][2],
-            'PostCountry': arrayWithCompanyInfo[13][2], 'PostIndex': int(arrayWithCompanyInfo[12][2]),
+            'AddressBuildingNumber': arrayWithCompanyInfo[9][2], 'AddressCity': arrayWithCompanyInfo[8][2],
+            'AddressCountry': arrayWithCompanyInfo[7][2], 'AddressIndex': int(arrayWithCompanyInfo[6][2]),
+            'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[1][2],
+            'Phone': arrayWithCompanyInfo[5][2],
+            'PostBuildingNumber': arrayWithCompanyInfo[13][2], 'PostCity': arrayWithCompanyInfo[12][2],
+            'PostCountry': arrayWithCompanyInfo[11][2], 'PostIndex': int(arrayWithCompanyInfo[10][2]),
             'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
             'UrlSite': arrayWithCompanyInfo[3][2]
         })
@@ -308,15 +302,15 @@ class ClientBM:
     def workWithCompanyExcelController(self, excelFilePathPlusName):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='О КОМПАНИИ')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=3)
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=5)
         return self.createArrayWithCompanyInfo(arrayWithInfo)
 
-    def createCompanyFromExcelController(self, excelFilePathPlusName):
+    def createCompanyFromExcelController(self, excelFilePathPlusName, defaultCompanyShortName):
         '''
         Создание компаниии по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
         '''
-        companyShortName = self.getCompanyShortName()
+        companyShortName = defaultCompanyShortName
         holdingId = self.getHoldingIdByCompanyShortName(companyShortName)
         self.startWorkWithInterface(interfaceNumberInArray=0)
         self.authorization()
@@ -336,61 +330,77 @@ class ClientBM:
             Возвращает "словарь словарей" с информацией о ролях всех пользователей во всех КО.
             Конкретно для создания КО есть лишняя информация.
             '''
-            dictWithCBUserRoles = {}
+            arrayOfDictsWithCBUserRoles = []
             for i in range(CBAmount):
                 d_ = {}
                 for j in range(self.userToCreateAmount):
                     d_.update(
-                        {arrayWithCBRolesWithNoStructure[j + 1][1]: arrayWithCBRolesWithNoStructure[j + 1][2 + i]})
-                dictWithCBUserRoles.update({arrayWithCBRolesWithNoStructure[0][i + 2]: d_})
-            return dictWithCBUserRoles
+                        {arrayWithCBRolesWithNoStructure[j][i + 2]: arrayWithCBRolesWithNoStructure[j][1]})
+                arrayOfDictsWithCBUserRoles.append(d_)
+            return arrayOfDictsWithCBUserRoles
 
-        def getUsefulFormatFromDictWithCBUserRoles(dictWithCBUserRoles):
+        def getUsefulFormatFromDictWithCBUserRoles(arrayOfDictWithCBUserRoles):
             '''
             "Конвертирование" "словаря словарей" в формат:
                 - убрать участников (всевозможных типов)
                 - вместо имен пользователей -- Id пользователя
             '''
-            for i in dictWithCBUserRoles.keys():
-                b = []
-                for j in dictWithCBUserRoles[i]:
-                    if dictWithCBUserRoles[i][j] not in ['ПРЕД', 'СЕК']:
-                        b.append(j)
-                for k in b:
-                    dictWithCBUserRoles[i].pop(k)
-            return dictWithCBUserRoles
+            heads_and_secretaries = []
+            for i in range(len(arrayOfDictWithCBUserRoles)):
+                heads_and_secretaries.append({})
+                for k in arrayOfDictWithCBUserRoles[i].keys():
+                    if k == 'ПРЕД':
+                        heads_and_secretaries[i].update({'ПРЕД': arrayOfDictWithCBUserRoles[i].get(k)})
+                    if k == 'СЕК':
+                        heads_and_secretaries[i].update({'СЕК': arrayOfDictWithCBUserRoles[i].get(k)})
+            return heads_and_secretaries
 
         listWithCBInfo = self.readList('РОЛИ')
-        arrayWithCBRolesWithNoStructure = self.readInfoFromList(listWithCBInfo, startInfoPosition=2, isCB=True)
-        dictWithCBUserRoles = createDictWithCBInfoWithStructure(self, arrayWithCBRolesWithNoStructure, CBAmount)
-        dictWithCBUserRoles = getUsefulFormatFromDictWithCBUserRoles(dictWithCBUserRoles)
-        return dictWithCBUserRoles
+        arrayWithCBRolesWithNoStructure = self.readInfoFromList(listWithCBInfo, startInfoPosition=11, isCBRoles=True)
+        arrayOfDictsWithCBUserRoles = createDictWithCBInfoWithStructure(self, arrayWithCBRolesWithNoStructure, CBAmount)
+        arrayOfDictsWithCBUserRoles= getUsefulFormatFromDictWithCBUserRoles(arrayOfDictsWithCBUserRoles)
+        return arrayOfDictsWithCBUserRoles
 
-    def createSeveralCollegialBodies(self, arrayOfDictWithCBInfo, CBCompanyId, dictWithCBUserRoles):
+    def getCBIdByItsShortName(self, CBCompanyId, CBName):
+
+        CBSearchCriteriaDto = self.client.factory.create('ns0:CollegialBodySearchCriteriaDto')
+        CompanyIdentityDto = self.client.factory.create('ns0:IdentityDto')
+
+        del CBSearchCriteriaDto.Attendance
+        del CBSearchCriteriaDto.CollegialBodyType
+
+        CBSearchCriteriaDto.ShortNameToken = CBName
+        CompanyIdentityDto.Id = CBCompanyId
+        CBSearchCriteriaDto.Company = CompanyIdentityDto
+        try:
+            cbInfo = self.client.service.Find(CBSearchCriteriaDto)
+            if cbInfo == '':
+                raise Exception('КО с таким именем нет.')
+            return cbInfo.CollegialBodyDto[0].Id
+        except WebFault as e:
+            self.addNoteToLogFile(e.args, warning=True)
+
+    def createSeveralCollegialBodies(self, arrayOfDictWithCBInfo, CBCompanyId, arrayOfDictsWithCBUserRoles):
         '''
         Создание Коллегиальных Органов, опираясь на информацию из входного значения - arrayOfcollegial
         После создания пользователей лучше, т.к. тут уже определяется секретарь
         Соответственно, желательно, чтобы пользователь, которому планируется присвоить роль секретаря был создан
         '''
 
-        ArrayOfCollegialBodyCreationCommandDto = self.client.factory.create(
-            'ns0:ArrayOfCollegialBodyCreationCommandDto')
-        print(self.currentInterfacenumberInArray)
-
         for collegialBodyInfo in arrayOfDictWithCBInfo:
 
-            # Получим сначала ФИО председателя и секретаря данного КО
-            CBHeadAndSecretaryInfo = dictWithCBUserRoles[collegialBodyInfo['FullName']]
+            ArrayOfCollegialBodyCreationCommandDto = self.client.factory.create(
+                'ns0:ArrayOfCollegialBodyCreationCommandDto')
 
-            for k, v in CBHeadAndSecretaryInfo.items():
-                if v == 'СЕК':
-                    secretaryOfCBName = k
-                elif v == 'ПРЕД':
-                    headOfCBName = k
+            # Получим сначала ФИО председателя и секретаря данного КО
+            CBHeadAndSecretaryInfo = arrayOfDictsWithCBUserRoles[collegialBodyInfo['Order'] - 1]
+
+            secretaryOfCBLastName = CBHeadAndSecretaryInfo['СЕК']
+            headOfCBLastName = CBHeadAndSecretaryInfo['ПРЕД']
 
             # Получим Id председателя и секретаря данного КО, основываясь на их ФИО
-            headOfCBId = self.getUserIdByHisFI(headOfCBName)
-            secretaryOfCBId = self.getUserIdByHisFI(secretaryOfCBName)
+            headOfCBId = self.getUserIdByHisFI(headOfCBLastName)
+            secretaryOfCBId = self.getUserIdByHisFI(secretaryOfCBLastName)
 
             # Нужно снова начать работу с нужным интерфейсом, т.к. для получения
             #       Id секретаря и председателя было переклчения на UserManagementService
@@ -406,15 +416,33 @@ class ClientBM:
             LdapUserIdentityDtoSecretaryOf = self.client.factory.create('ns0:LdapUserIdentityDto')
 
             del CollegialBodyCreationCommandDto.Id
-            IdentityDtoParent.Id = collegialBodyInfo['ParentId']
-            CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
+            if collegialBodyInfo['ParentCBName'] != '':
+                IdentityDtoParent.Id = self.getCBIdByItsShortName(CBCompanyId, collegialBodyInfo['ParentCBName'])
+                CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
             LdapUserIdentityDtoHeadOf.Id = headOfCBId
             del LdapUserIdentityDtoHeadOf.LdapUsername
             CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
             IdentityDtoCompany.Id = CBCompanyId
             CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
-            CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.Executive)
-            CollegialBodyCreationCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[0])
+            if collegialBodyInfo['CBType'] == 'ИСПОЛНИТЕЛЬНЫЙ':
+                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.Executive)
+            elif collegialBodyInfo['CBType'] == 'НЕ ИСПОЛНИТЕЛЬНЫЙ':
+                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotExecutive)
+            elif collegialBodyInfo['CBType'] == 'НЕ КОРПОРАТИВНЫЙ':
+                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotCorporate)
+            elif collegialBodyInfo['CBType'] == 'ГОСУДАРСТВЕННЫЙ':
+                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.State)
+            elif collegialBodyInfo['CBType'] == 'ОРГАН УПРАВЛЕНИЯ':
+                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.ManagementBody)
+            else:
+                pass
+                # можно добавить выброс исключения
+
+            if collegialBodyInfo['AttendanceType'] == "ЗАОЧНОЕ":
+                CollegialBodyCreationCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[0])
+            else:
+                CollegialBodyCreationCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[1])
+
             CollegialBodyCreationCommandDto.FullName = collegialBodyInfo['FullName']
             CollegialBodyCreationCommandDto.Order = collegialBodyInfo['Order']
             CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
@@ -427,29 +455,29 @@ class ClientBM:
             ArrayOfCollegialBodyCreationCommandDto.CollegialBodyCreationCommandDto.append(
                 CollegialBodyCreationCommandDto)
 
-        try:
-            getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
-            self.addNoteToLogFile('Создан колегиальный орган. %s' % getInfo)
-        except WebFault as e:
-            self.addNoteToLogFile(e.args, warning=True)
+            try:
+                getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
+                self.addNoteToLogFile('Создан колегиальный орган. %s' % getInfo)
+            except WebFault as e:
+                self.addNoteToLogFile(e.args, warning=True)
 
     def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
         arrayOfDictWithCBInfo = []
         j = 1
         for x in arrayWithCBInfo:
             arrayOfDictWithCBInfo.append({
-                'FullName': x[2], 'ShortName': x[4], 'ParentId': None, 'HeadOfId': None,
-                'Order': j, 'CompanyId': None, 'QualifiedMajority': qualifiedCBUsersCount,
-                'Secretary': None, 'ShortDescription': x[9]
-
+                'FullName': x[2], 'ShortName': x[4],
+                'Order': j, 'QualifiedMajority': qualifiedCBUsersCount,
+                'ShortDescription': x[7], 'ParentCBName': x[14],
+                'AttendanceType': x[12], 'CBType': x[13]
             })
             j += 1
-        return arrayOfDictWithCBInfo, len(arrayOfDictWithCBInfo)
+        return arrayOfDictWithCBInfo
 
     def workWithCBExcelController(self, excelFilePathPlusName):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='КО')
-        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=4)
+        arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=5)
         return self.createArrayOfDictWithCBInfo(arrayWithInfo)
 
     def createCBFromExcelController(self, excelFilePathPlusName):
@@ -460,34 +488,35 @@ class ClientBM:
         CBCompanyId = self.getCompanyIdByItsShortName()
         self.startWorkWithInterface(interfaceNumberInArray=2)
         self.authorization()
-        arrayOfDictWithCBInfo, CBAmount = self.workWithCBExcelController(excelFilePathPlusName)
-        dictWithCBUserRoles = self.getHeadOfAndSecretary(CBAmount)
-        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, dictWithCBUserRoles)
+        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
+        arrayOfDictsWithCBUserRoles = self.getHeadOfAndSecretary(len(arrayOfDictWithCBInfo))
+        self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, arrayOfDictsWithCBUserRoles)
 
-
-'''
-ПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):
-- адрес сервера BM
-- путь к excel файлу (с расширением и именем самого файла)
-- логин для входа на сервер BM
-- пароль для входа на сервер BM
-- желаемый пароль для создаваемых пользователей
-'''
 
 if __name__ == '__main__':
     # try:
     sys.argv = sys.argv[1:]
-    url = sys.argv[0]
-    clientBM = ClientBM(url)
-    excelFilePathPlusName = sys.argv[1]
-    login = sys.argv[2]
-    password = sys.argv[3]
-    clientBM.setLoginAndPassword(login, password)
-    defaultPassword = sys.argv[4]
+    if sys.argv[0] != "help":
+        url = sys.argv[0]
+        clientBM = ClientBM(url)
+        excelFilePathPlusName = sys.argv[1]
+        login = sys.argv[2]
+        password = sys.argv[3]
+        clientBM.setLoginAndPassword(login, password)
+        defaultCompanyShortName = sys.argv[4]
+        defaultPassword = sys.argv[5]
 
-    clientBM.createCompanyFromExcelController(excelFilePathPlusName)
-    clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
-    clientBM.createCBFromExcelController(excelFilePathPlusName)
+        clientBM.createCompanyFromExcelController(excelFilePathPlusName, defaultCompanyShortName)
+        clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
+        clientBM.createCBFromExcelController(excelFilePathPlusName)
+    else:
+        print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):\n
+                - адрес сервера BM\n
+                - путь к excel файлу (с расширением и именем самого файла)\n
+                - логин для входа на сервер BM\n
+                - пароль для входа на сервер BM\n
+                - короткое имя любой существующей компании стенда для поиска Id Холдинга\n
+                - желаемый пароль для создаваемых пользователей\n""")
 
     # except Exception as e:
     #     clientBM.addNoteToLogFile(e.args, warning=True)
