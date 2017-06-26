@@ -128,11 +128,11 @@ class ClientBM:
 
     def addNoteToLogFile(self, message, warning=False):
         if warning:
-            # logging.warning(message)
-            print(message)
+            logging.warning(message)
+            #print(message)
         else:
-            # logging.info(message)
-            print("WARNING: " + message)
+            logging.info(message)
+            #print("WARNING: " + message)
 
         # =========================================================
         # МЕТОДЫ ДЛЯ РАБОТЫ С EXCEL ФАЙЛОМ
