@@ -494,29 +494,29 @@ class ClientBM:
 
 
 if __name__ == '__main__':
-    # try:
-    sys.argv = sys.argv[1:]
-    if sys.argv[0] != "help":
-        url = sys.argv[0]
-        clientBM = ClientBM(url)
-        excelFilePathPlusName = sys.argv[1]
-        login = sys.argv[2]
-        password = sys.argv[3]
-        clientBM.setLoginAndPassword(login, password)
-        defaultCompanyShortName = sys.argv[4]
-        defaultPassword = sys.argv[5]
+    try:
+        sys.argv = sys.argv[1:]
+        if sys.argv[0] != "help":
+            url = sys.argv[0]
+            clientBM = ClientBM(url)
+            excelFilePathPlusName = sys.argv[1]
+            login = sys.argv[2]
+            password = sys.argv[3]
+            clientBM.setLoginAndPassword(login, password)
+            defaultCompanyShortName = sys.argv[4]
+            defaultPassword = sys.argv[5]
 
-        clientBM.createCompanyFromExcelController(excelFilePathPlusName, defaultCompanyShortName)
-        clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
-        clientBM.createCBFromExcelController(excelFilePathPlusName)
-    else:
-        print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):\n
-                - адрес сервера BM\n
-                - путь к excel файлу (с расширением и именем самого файла)\n
-                - логин для входа на сервер BM\n
-                - пароль для входа на сервер BM\n
-                - короткое имя любой существующей компании стенда для поиска Id Холдинга\n
-                - желаемый пароль для создаваемых пользователей\n""")
+            clientBM.createCompanyFromExcelController(excelFilePathPlusName, defaultCompanyShortName)
+            clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
+            clientBM.createCBFromExcelController(excelFilePathPlusName)
+        else:
+            print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):\n
+                    - адрес сервера BM\n
+                    - путь к excel файлу (с расширением и именем самого файла)\n
+                    - логин для входа на сервер BM\n
+                    - пароль для входа на сервер BM\n
+                    - короткое имя любой существующей компании стенда для поиска Id Холдинга\n
+                    - желаемый пароль для создаваемых пользователей\n""")
 
-    # except Exception as e:
-    #     clientBM.addNoteToLogFile(e.args, warning=True)
+    except Exception as e:
+        clientBM.addNoteToLogFile(e.args, warning=True)
