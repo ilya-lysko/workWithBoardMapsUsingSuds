@@ -1,6 +1,7 @@
 import logging
 from urllib.error import URLError
 
+import openpyxl
 import suds
 import xlrd
 from suds import client
@@ -13,9 +14,11 @@ class ClientBM:
     currentInterfacenumberInArray = int()
     excelFile = None
     login = None
+    excelFileForWriting = None
+    guidDictQueue = {}
     password = None
     userToCreateAmount = None
-    companyWorkWithShortName = None
+    companyWorkWithId = None
     defaultEmail = 'demoboardmaps@yandex.ru'
     interfaces = ['CompanyManagementService', 'UserManagementService', 'CollegialBodyManagementService',
                   'MeetingManagementService', 'MeetingMemberManagementService', 'IssueManagementService',
@@ -38,7 +41,7 @@ class ClientBM:
             self.currentInterfacenumberInArray = interfaceNumberInArray
             self.client = suds.client.Client(
                 self.serverURL + "/PublicApi/" + self.interfaces[interfaceNumberInArray] + ".svc?wsdl")
-            self.addNoteToLogFile('\n\nНачало работы с сервером %s' % self.serverURL)
+            self.addNoteToLogFile('\n\nНачало работы интерфейсом' + self.interfaces[interfaceNumberInArray] + ' сервера %s' % self.serverURL)
         except URLError as e:
             self.addNoteToLogFile('\n\nСбой подключения к серверу %s' % self.serverURL, warning=True)
             self.addNoteToLogFile(e.args, warning=True)
@@ -68,11 +71,11 @@ class ClientBM:
     # =========================================================
     # МЕТОДЫ ДЛЯ ПОЛУЧЕНИЯ ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ, ТРЕБУЕМОЙ ДЛЯ НЕКОТОРЫХ ДАЛЬНЕЙШИХ СЦЕНАРИЕВ
 
-    def getCompanyIdByItsShortName(self):
+    def getCompanyIdByItsShortName(self, companyWorkWithShortName):
         self.startWorkWithInterface(0)
         self.authorization()
         CompanySearchCriteriaDto = self.client.factory.create('ns0:CompanySearchCriteriaDto')
-        CompanySearchCriteriaDto.ShortNameToken = self.companyWorkWithShortName
+        CompanySearchCriteriaDto.ShortNameToken = companyWorkWithShortName
         try:
             companyInfo = self.client.service.Find(CompanySearchCriteriaDto)
             if companyInfo == '':
@@ -174,77 +177,136 @@ class ClientBM:
             pass
         return arrayWithInfo
 
+    def writeGuidToExcel(self):
+        '''
+        Записывает GUID созданного объекта в колонку в соотв. листе excel файла
+
+        :param excelListName:
+        :param guid:
+        :return:
+        '''
+        excelFile = openpyxl.load_workbook(excelFilePathPlusName)
+
+        for excelSheetName, guidRowDict in self.guidDictQueue.items():
+            excelSheet = excelFile[excelSheetName]
+            if excelSheetName == "О КОМПАНИИ":
+                columnNumber = 5
+            elif excelSheetName == "ПОЛЬЗОВАТЕЛИ":
+                columnNumber = 18
+            elif excelSheetName == "КО":
+                columnNumber = 16
+            else:
+                raise Exception("Unknown sheet name")
+            for k, v in guidRowDict.items():
+                excelSheet.cell(row=k, column=columnNumber).value = v
+
+        excelFile.save(excelFilePathPlusName)
+
+    def addGuidDictToQueue(self, excelSheetName, guidRowDict):
+        self.guidDictQueue.update({excelSheetName: guidRowDict})
+
     # =========================================================
     # МЕТОДЫ ДЛЯ СОЗДАНИЯ ПОЛЬЗОВАТЕЛЕЙ
 
-    def createUser(self, userInfo, usersCompanyId):
+    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId):
         '''
         Запуск этого метода только после запуска метода startWorkWithInterface с параметром 1
         (и соотв., после метода authorization)
-        userInfo - словарь с информацией о пользователе
-        '''
-        ArrayOfUserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto')
-        UserCreationCommandDto = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto')
-        Company = self.client.factory.create('ns0:ArrayOfUserCreationCommandDto.UserCreationCommandDto.Company')
-
-        UserCreationCommandDto.BasicPassword = userInfo['BasicPassword']
-        UserCreationCommandDto.BasicUsername = userInfo['BasicUsername']
-        UserCreationCommandDto.Blocked = False
-        Company.Id = usersCompanyId
-        UserCreationCommandDto.Company = Company
-        if userInfo['Email'] == '':
-            UserCreationCommandDto.Email = self.defaultEmail
-        else:
-            UserCreationCommandDto.Email = userInfo['Email']
-        UserCreationCommandDto.FirstName = userInfo['FirstName']
-        UserCreationCommandDto.LastName = userInfo['LastName']
-        UserCreationCommandDto.MiddleName = userInfo['MiddleName']
-        UserCreationCommandDto.Phone = userInfo['Phone']
-        UserCreationCommandDto.Position = userInfo['Position']
-        UserCreationCommandDto.Bio = userInfo['Bio']
-        # UserCreationCommandDto.PhotoImageSource = "materials/default_picture.png" # не работает :(
-
-        ArrayOfUserCreationCommandDto.UserCreationCommandDto.append(UserCreationCommandDto)
-
-        try:
-            getInfo = self.client.service.Create(ArrayOfUserCreationCommandDto)
-            self.addNoteToLogFile('Создан пользователь. %s' % getInfo)
-        except WebFault as e:
-            self.addNoteToLogFile(e.args, warning=True)
-
-    def createSeveralUsers(self, arrayOfUserInfoDict, usersCompanyId):
-        '''
         arrayOfUserInfoDict - массив словарей с информацией о пользователях для их создания
+        Создание все равно происходит по одному объекту пользователя из-за необходимости валидации
         '''
-        for userInfo in arrayOfUserInfoDict:
-            self.createUser(userInfo, usersCompanyId)
+
+        guidRowDict = {}
+        rowCounter = 7
+
         self.userToCreateAmount = len(arrayOfUserInfoDict)
+
+        for userInfo in arrayOfUserInfoDict:
+            if (userInfo.get('GUID') != None and workStrategyFlag == 'i') or \
+                    (userInfo.get('GUID') == None and workStrategyFlag == 'u'):
+                continue
+
+            if userInfo.get('GUID') != None:
+                actionType = "Update"
+            else:
+                actionType = "Creation"
+
+            ArrayOfUserActionCommandDto = self.client.factory.create('ns0:ArrayOfUser' + actionType + 'CommandDto')
+            UserActionCommandDto = self.client.factory.create(
+                'ns0:ArrayOfUser' + actionType + 'CommandDto.User' + actionType + 'CommandDto')
+            Company = self.client.factory.create('ns0:ArrayOfUser' + actionType + 'CommandDto.User' + actionType + 'CommandDto.Company')
+
+            if userInfo.get('GUID') != None:
+                UserActionCommandDto.Id = userInfo.get('GUID')
+            else:
+                UserActionCommandDto.BasicPassword = userInfo['BasicPassword']
+                UserActionCommandDto.BasicUsername = userInfo['BasicUsername']
+                Company.Id = usersCompanyId
+                UserActionCommandDto.Company = Company
+            UserActionCommandDto.Blocked = False
+            if userInfo['Email'] == '':
+                UserActionCommandDto.Email = self.defaultEmail
+            else:
+                UserActionCommandDto.Email = userInfo['Email']
+            UserActionCommandDto.FirstName = userInfo['FirstName']
+            UserActionCommandDto.LastName = userInfo['LastName']
+            UserActionCommandDto.MiddleName = userInfo['MiddleName']
+            UserActionCommandDto.Phone = userInfo['Phone']
+            UserActionCommandDto.Position = userInfo['Position']
+            UserActionCommandDto.Bio = userInfo['Bio']
+            # UserCreationCommandDto.PhotoImageSource = "materials/default_picture.png" # не работает :(
+
+            if userInfo.get('GUID') != None:
+                ArrayOfUserActionCommandDto.UserUpdateCommandDto.append(UserActionCommandDto)
+            else:
+                ArrayOfUserActionCommandDto.UserCreationCommandDto.append(UserActionCommandDto)
+
+            try:
+                if userInfo.get('GUID') != None:
+                    info = self.client.service.Update(ArrayOfUserActionCommandDto)
+                    self.addNoteToLogFile('Обновлен пользователь. %s' % info)
+                else:
+                    info = self.client.service.Create(ArrayOfUserActionCommandDto)
+                    guidRowDict.update({rowCounter: info.UserDto[0].Id})
+                    self.addNoteToLogFile('Создан пользователь. %s' % info)
+                rowCounter += 1
+            except WebFault as e:
+                self.addNoteToLogFile(e.args, warning=True)
+
+        self.addGuidDictToQueue("ПОЛЬЗОВАТЕЛИ", guidRowDict)
 
     def createArrayOfDictWithUsersInfo(self, arrayWithUsersInfo, defaultPassword):
         arrayOfDictWithUsersInfo = []
         for x in arrayWithUsersInfo:
-            arrayOfDictWithUsersInfo.append({
-                'BasicPassword': defaultPassword, 'BasicUsername': x[12], 'Bio': x[15],
-                'Email': x[8], 'FirstName': x[3],
-                'LastName': x[2], 'MiddleName': x[4], 'Phone': x[9], 'Position': x[10]
-            })
+            if x[17] != '':
+                arrayOfDictWithUsersInfo.append({
+                    'BasicPassword': defaultPassword, 'BasicUsername': x[12], 'Bio': x[15],
+                    'Email': x[8], 'FirstName': x[3], 'GUID': x[17],
+                    'LastName': x[2], 'MiddleName': x[4], 'Phone': x[9], 'Position': x[10]
+                })
+            else:
+                arrayOfDictWithUsersInfo.append({
+                    'BasicPassword': defaultPassword, 'BasicUsername': x[12], 'Bio': x[15],
+                    'Email': x[8], 'FirstName': x[3],
+                    'LastName': x[2], 'MiddleName': x[4], 'Phone': x[9], 'Position': x[10]
+                })
         return arrayOfDictWithUsersInfo
 
-    def workWithUsersExcelController(self, excelFilePathPlusName, defaultPassword):
+    def workWithUsersExcelController(self, defaultPassword):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='ПОЛЬЗОВАТЕЛИ')
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=6)
         return self.createArrayOfDictWithUsersInfo(arrayWithInfo, defaultPassword)
 
-    def createUsersFromExcelController(self, excelFilePathPlusName, defaultPassword):
+    def createUsersFromExcelController(self, defaultPassword):
         '''
         Создание пользователей по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
         '''
-        usersCompanyId = self.getCompanyIdByItsShortName()
+        usersCompanyId = self.companyWorkWithId
         self.startWorkWithInterface(interfaceNumberInArray=1)
         self.authorization()
-        arrayOfDictWithUsersInfo = self.workWithUsersExcelController(excelFilePathPlusName, defaultPassword)
+        arrayOfDictWithUsersInfo = self.workWithUsersExcelController(defaultPassword)
         self.createSeveralUsers(arrayOfDictWithUsersInfo, usersCompanyId)
 
     # =========================================================
@@ -253,68 +315,100 @@ class ClientBM:
     def createCompany(self, companyInfo, holdingId):
         '''
         Создании Компании, опираясь информацию из companyInfo
-        Так же, требуется holdingId (дл определения этого параметра есть отдельный метод)
+        Так же, требуется holdingId (для определения этого параметра есть отдельный метод)
         '''
-        ArrayOfCompanyCreationCommandDto = self.client.factory.create('ns0:ArrayOfCompanyCreationCommandDto')
-        CompanyCreationCommandDto = self.client.factory.create('ns0:CompanyCreationCommandDto')
+        if (companyInfo.get('GUID') != None and workStrategyFlag == 'i') or \
+            (companyInfo.get('GUID') == None and workStrategyFlag == 'u'):
+            return
+
+        if companyInfo.get('GUID') != None:
+            actionType = "Update"
+        else:
+            actionType = "Creation"
+        ArrayOfCompanyActionCommandDto = self.client.factory.create('ns0:ArrayOfCompany' + actionType +'CommandDto')
+        CompanyActionCommandDto = self.client.factory.create('ns0:Company' + actionType + 'CommandDto')
         IdentityDto = self.client.factory.create('ns0:IdentityDto')
 
-        CompanyCreationCommandDto.AddressBuildingNumber = companyInfo['AddressBuildingNumber']
-        CompanyCreationCommandDto.AddressCity = companyInfo['AddressCity']
-        CompanyCreationCommandDto.AddressCountry = companyInfo['AddressCountry']
-        CompanyCreationCommandDto.AddressIndex = companyInfo['AddressIndex']
-        CompanyCreationCommandDto.Email = companyInfo['Email']
-        CompanyCreationCommandDto.FullName = companyInfo['FullName']
+        if companyInfo.get('GUID') != None:
+            CompanyActionCommandDto.Id = companyInfo.get('GUID')
+        CompanyActionCommandDto.AddressBuildingNumber = companyInfo['AddressBuildingNumber']
+        CompanyActionCommandDto.AddressCity = companyInfo['AddressCity']
+        CompanyActionCommandDto.AddressCountry = companyInfo['AddressCountry']
+        CompanyActionCommandDto.AddressIndex = companyInfo['AddressIndex']
+        CompanyActionCommandDto.Email = companyInfo['Email']
+        CompanyActionCommandDto.FullName = companyInfo['FullName']
         IdentityDto.Id = holdingId
-        CompanyCreationCommandDto.Holding = IdentityDto
-        CompanyCreationCommandDto.Phone = companyInfo['Phone']
-        CompanyCreationCommandDto.PostBuildingNumber = companyInfo['PostBuildingNumber']
-        CompanyCreationCommandDto.PostCity = companyInfo['PostCity']
-        CompanyCreationCommandDto.PostCountry = companyInfo['PostCountry']
-        CompanyCreationCommandDto.PostIndex = companyInfo['PostIndex']
-        CompanyCreationCommandDto.ShortDescription = companyInfo['ShortDescription']
-        CompanyCreationCommandDto.ShortName = companyInfo['ShortName']
-        CompanyCreationCommandDto.UrlSite = companyInfo['UrlSite']
+        CompanyActionCommandDto.Holding = IdentityDto
+        CompanyActionCommandDto.Phone = companyInfo['Phone']
+        CompanyActionCommandDto.PostBuildingNumber = companyInfo['PostBuildingNumber']
+        CompanyActionCommandDto.PostCity = companyInfo['PostCity']
+        CompanyActionCommandDto.PostCountry = companyInfo['PostCountry']
+        CompanyActionCommandDto.PostIndex = companyInfo['PostIndex']
+        CompanyActionCommandDto.ShortDescription = companyInfo['ShortDescription']
+        CompanyActionCommandDto.ShortName = companyInfo['ShortName']
+        CompanyActionCommandDto.UrlSite = companyInfo['UrlSite']
 
-        ArrayOfCompanyCreationCommandDto.CompanyCreationCommandDto.append(CompanyCreationCommandDto)
+        if companyInfo.get('GUID') != None:
+            ArrayOfCompanyActionCommandDto.CompanyUpdateCommandDto.append(CompanyActionCommandDto)
+        else:
+            ArrayOfCompanyActionCommandDto.CompanyCreationCommandDto.append(CompanyActionCommandDto)
 
         try:
-            getInfo = self.client.service.Create(ArrayOfCompanyCreationCommandDto)
-            self.addNoteToLogFile('Создана компания. %s' % getInfo)
+            if companyInfo.get('GUID') != None:
+                info = self.client.service.Update(ArrayOfCompanyActionCommandDto)
+                self.addNoteToLogFile('Обновлена компания. %s' % info)
+            else:
+                info = self.client.service.Create(ArrayOfCompanyActionCommandDto)
+                guidRowDict = {6: info.CompanyDto[0].Id}
+                self.addGuidDictToQueue("О КОМПАНИИ", guidRowDict)
+                self.addNoteToLogFile('Создана компания. %s' % info)
         except WebFault as e:
             self.addNoteToLogFile(e.args, warning=True)
 
     def createArrayWithCompanyInfo(self, arrayWithCompanyInfo):
         arrayOfDictWithCompanyInfo = []
-        arrayOfDictWithCompanyInfo.append({
-            'AddressBuildingNumber': arrayWithCompanyInfo[9][2], 'AddressCity': arrayWithCompanyInfo[8][2],
-            'AddressCountry': arrayWithCompanyInfo[7][2], 'AddressIndex': int(arrayWithCompanyInfo[6][2]),
-            'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[1][2],
-            'Phone': arrayWithCompanyInfo[5][2],
-            'PostBuildingNumber': arrayWithCompanyInfo[13][2], 'PostCity': arrayWithCompanyInfo[12][2],
-            'PostCountry': arrayWithCompanyInfo[11][2], 'PostIndex': int(arrayWithCompanyInfo[10][2]),
-            'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
-            'UrlSite': arrayWithCompanyInfo[3][2]
-        })
-        self.companyWorkWithShortName = arrayWithCompanyInfo[1][2]
+        if arrayWithCompanyInfo[0][4] != "":
+            arrayOfDictWithCompanyInfo.append({
+                'AddressBuildingNumber': arrayWithCompanyInfo[9][2], 'AddressCity': arrayWithCompanyInfo[8][2],
+                'AddressCountry': arrayWithCompanyInfo[7][2], 'AddressIndex': int(arrayWithCompanyInfo[6][2]),
+                'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[1][2],
+                'Phone': arrayWithCompanyInfo[5][2], 'GUID': arrayWithCompanyInfo[0][4],
+                'PostBuildingNumber': arrayWithCompanyInfo[13][2], 'PostCity': arrayWithCompanyInfo[12][2],
+                'PostCountry': arrayWithCompanyInfo[11][2], 'PostIndex': int(arrayWithCompanyInfo[10][2]),
+                'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
+                'UrlSite': arrayWithCompanyInfo[3][2]
+            })
+            self.companyWorkWithId = arrayWithCompanyInfo[0][4]
+        else:
+            arrayOfDictWithCompanyInfo.append({
+                'AddressBuildingNumber': arrayWithCompanyInfo[9][2], 'AddressCity': arrayWithCompanyInfo[8][2],
+                'AddressCountry': arrayWithCompanyInfo[7][2], 'AddressIndex': int(arrayWithCompanyInfo[6][2]),
+                'Email': arrayWithCompanyInfo[4][2], 'FullName': arrayWithCompanyInfo[1][2],
+                'Phone': arrayWithCompanyInfo[5][2],
+                'PostBuildingNumber': arrayWithCompanyInfo[13][2], 'PostCity': arrayWithCompanyInfo[12][2],
+                'PostCountry': arrayWithCompanyInfo[11][2], 'PostIndex': int(arrayWithCompanyInfo[10][2]),
+                'ShortDescription': arrayWithCompanyInfo[2][2], 'ShortName': arrayWithCompanyInfo[1][2],
+                'UrlSite': arrayWithCompanyInfo[3][2]
+            })
+            self.companyWorkWithName = arrayWithCompanyInfo[1][2]
+
         return arrayOfDictWithCompanyInfo
 
-    def workWithCompanyExcelController(self, excelFilePathPlusName):
+    def workWithCompanyExcelController(self):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='О КОМПАНИИ')
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=5)
         return self.createArrayWithCompanyInfo(arrayWithInfo)
 
-    def createCompanyFromExcelController(self, excelFilePathPlusName, defaultCompanyShortName):
+    def createCompanyFromExcelController(self, defaultCompanyShortName):
         '''
         Создание компаниии по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с компаниями, авторизацию и т.д.
         '''
-        companyShortName = defaultCompanyShortName
-        holdingId = self.getHoldingIdByCompanyShortName(companyShortName)
+        holdingId = self.getHoldingIdByCompanyShortName(defaultCompanyShortName)
         self.startWorkWithInterface(interfaceNumberInArray=0)
         self.authorization()
-        arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController(excelFilePathPlusName)
+        arrayOfDictWithCompanyInfo = self.workWithCompanyExcelController()
         self.createCompany(arrayOfDictWithCompanyInfo[0], holdingId)
 
     # =========================================================
@@ -385,12 +479,25 @@ class ClientBM:
         Создание Коллегиальных Органов, опираясь на информацию из входного значения - arrayOfcollegial
         После создания пользователей лучше, т.к. тут уже определяется секретарь
         Соответственно, желательно, чтобы пользователь, которому планируется присвоить роль секретаря был создан
+        Создание все равно присходит "по одному" объекту КО, из-за атрибута "Родительский КО"
+                                                             из-за необходимости валидации
         '''
 
-        for collegialBodyInfo in arrayOfDictWithCBInfo:
+        guidRowDict = {}
+        rowCounter = 6
 
-            ArrayOfCollegialBodyCreationCommandDto = self.client.factory.create(
-                'ns0:ArrayOfCollegialBodyCreationCommandDto')
+        for collegialBodyInfo in arrayOfDictWithCBInfo:
+            if (collegialBodyInfo.get('GUID') != None and workStrategyFlag == 'i') or \
+                    (collegialBodyInfo.get('GUID') == None and workStrategyFlag == 'u'):
+                continue
+
+            if collegialBodyInfo.get('GUID') != None:
+                actionType = "Update"
+            else:
+                actionType = "Creation"
+
+            ArrayOfCollegialBodyActionCommandDto = self.client.factory.create(
+                'ns0:ArrayOfCollegialBody' + actionType + 'CommandDto')
 
             # Получим сначала ФИО председателя и секретаря данного КО
             CBHeadAndSecretaryInfo = arrayOfDictsWithCBUserRoles[collegialBodyInfo['Order'] - 1]
@@ -407,7 +514,7 @@ class ClientBM:
             self.startWorkWithInterface(2)
             self.authorization()
 
-            CollegialBodyCreationCommandDto = self.client.factory.create('ns0:CollegialBodyCreationCommandDto')
+            CollegialBodyActionCommandDto = self.client.factory.create('ns0:CollegialBody' + actionType + 'CommandDto')
             AttendanceTypeEnumDto = self.client.factory.create('ns0:AttendanceTypeEnumDto')
             CollegialBodyTypeEnumDto = self.client.factory.create('ns0:CollegialBodyTypeEnumDto')
             IdentityDtoCompany = self.client.factory.create('ns0:IdentityDto')
@@ -415,80 +522,105 @@ class ClientBM:
             IdentityDtoParent = self.client.factory.create('ns0:IdentityDto')
             LdapUserIdentityDtoSecretaryOf = self.client.factory.create('ns0:LdapUserIdentityDto')
 
-            del CollegialBodyCreationCommandDto.Id
+            if collegialBodyInfo.get('GUID') != None:
+                CollegialBodyActionCommandDto.Id = collegialBodyInfo.get('GUID')
+            else:
+                IdentityDtoCompany.Id = CBCompanyId
+                CollegialBodyActionCommandDto.Company = IdentityDtoCompany
+            del CollegialBodyActionCommandDto.Id
             if collegialBodyInfo['ParentCBName'] != '':
                 IdentityDtoParent.Id = self.getCBIdByItsShortName(CBCompanyId, collegialBodyInfo['ParentCBName'])
-                CollegialBodyCreationCommandDto.Parent = IdentityDtoParent
+                CollegialBodyActionCommandDto.Parent = IdentityDtoParent
             LdapUserIdentityDtoHeadOf.Id = headOfCBId
             del LdapUserIdentityDtoHeadOf.LdapUsername
-            CollegialBodyCreationCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
-            IdentityDtoCompany.Id = CBCompanyId
-            CollegialBodyCreationCommandDto.Company = IdentityDtoCompany
+            CollegialBodyActionCommandDto.HeadOf = LdapUserIdentityDtoHeadOf
             if collegialBodyInfo['CBType'] == 'ИСПОЛНИТЕЛЬНЫЙ':
-                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.Executive)
+                CollegialBodyActionCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.Executive)
             elif collegialBodyInfo['CBType'] == 'НЕ ИСПОЛНИТЕЛЬНЫЙ':
-                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotExecutive)
+                CollegialBodyActionCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotExecutive)
             elif collegialBodyInfo['CBType'] == 'НЕ КОРПОРАТИВНЫЙ':
-                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotCorporate)
+                CollegialBodyActionCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.NotCorporate)
             elif collegialBodyInfo['CBType'] == 'ГОСУДАРСТВЕННЫЙ':
-                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.State)
+                CollegialBodyActionCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.State)
             elif collegialBodyInfo['CBType'] == 'ОРГАН УПРАВЛЕНИЯ':
-                CollegialBodyCreationCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.ManagementBody)
+                CollegialBodyActionCommandDto.CollegialBodyType.set(CollegialBodyTypeEnumDto.ManagementBody)
             else:
                 pass
                 # можно добавить выброс исключения
 
             if collegialBodyInfo['AttendanceType'] == "ЗАОЧНОЕ":
-                CollegialBodyCreationCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[0])
+                CollegialBodyActionCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[0])
             else:
-                CollegialBodyCreationCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[1])
+                CollegialBodyActionCommandDto.Attendance.set(AttendanceTypeEnumDto.__keylist__[1])
 
-            CollegialBodyCreationCommandDto.FullName = collegialBodyInfo['FullName']
-            CollegialBodyCreationCommandDto.Order = collegialBodyInfo['Order']
-            CollegialBodyCreationCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
+            CollegialBodyActionCommandDto.FullName = collegialBodyInfo['FullName']
+            CollegialBodyActionCommandDto.Order = collegialBodyInfo['Order']
+            CollegialBodyActionCommandDto.QualifiedMajority = collegialBodyInfo['QualifiedMajority']
             LdapUserIdentityDtoSecretaryOf.Id = secretaryOfCBId
             del LdapUserIdentityDtoSecretaryOf.LdapUsername
-            CollegialBodyCreationCommandDto.Secretary = LdapUserIdentityDtoSecretaryOf
-            CollegialBodyCreationCommandDto.ShortDescription = collegialBodyInfo['ShortDescription']
-            CollegialBodyCreationCommandDto.ShortName = collegialBodyInfo['ShortName']
+            CollegialBodyActionCommandDto.Secretary = LdapUserIdentityDtoSecretaryOf
+            CollegialBodyActionCommandDto.ShortDescription = collegialBodyInfo['ShortDescription']
+            CollegialBodyActionCommandDto.ShortName = collegialBodyInfo['ShortName']
 
-            ArrayOfCollegialBodyCreationCommandDto.CollegialBodyCreationCommandDto.append(
-                CollegialBodyCreationCommandDto)
+            if collegialBodyInfo.get('GUID') != None:
+                ArrayOfCollegialBodyActionCommandDto.CollegialBodyUpdateCommandDto.append(
+                    CollegialBodyActionCommandDto)
+            else:
+                ArrayOfCollegialBodyActionCommandDto.CollegialBodyCreationCommandDto.append(
+                    CollegialBodyActionCommandDto)
 
             try:
-                getInfo = self.client.service.Create(ArrayOfCollegialBodyCreationCommandDto)
-                self.addNoteToLogFile('Создан колегиальный орган. %s' % getInfo)
+                if collegialBodyInfo.get('GUID') != None:
+                    info = self.client.service.Update(ArrayOfCollegialBodyActionCommandDto)
+                    self.addNoteToLogFile('Обновлен колегиальный орган. %s' % info)
+                else:
+                    info = self.client.service.Create(ArrayOfCollegialBodyActionCommandDto)
+                    self.addNoteToLogFile('Создан колегиальный орган. %s' % info)
+                    guidRowDict.update({rowCounter: info.CollegialBodyDto[0].Id})
+                rowCounter += 1
             except WebFault as e:
                 self.addNoteToLogFile(e.args, warning=True)
+
+        self.addGuidDictToQueue("КО", guidRowDict)
 
     def createArrayOfDictWithCBInfo(self, arrayWithCBInfo, qualifiedCBUsersCount=4):
         arrayOfDictWithCBInfo = []
         j = 1
         for x in arrayWithCBInfo:
-            arrayOfDictWithCBInfo.append({
-                'FullName': x[2], 'ShortName': x[4],
-                'Order': j, 'QualifiedMajority': qualifiedCBUsersCount,
-                'ShortDescription': x[7], 'ParentCBName': x[14],
-                'AttendanceType': x[12], 'CBType': x[13]
-            })
+            if len(x) == 16:
+                arrayOfDictWithCBInfo.append({
+                    'FullName': x[2], 'ShortName': x[4], 'GUID': x[-1],
+                    'Order': j, 'QualifiedMajority': qualifiedCBUsersCount,
+                    'ShortDescription': x[6], 'ParentCBName': x[14],
+                    'AttendanceType': x[12], 'CBType': x[13]
+                })
+            else:
+                arrayOfDictWithCBInfo.append({
+                    'FullName': x[2], 'ShortName': x[4],
+                    'Order': j, 'QualifiedMajority': qualifiedCBUsersCount,
+                    'ShortDescription': x[6], 'ParentCBName': x[14],
+                    'AttendanceType': x[12], 'CBType': x[13]
+                })
             j += 1
         return arrayOfDictWithCBInfo
 
-    def workWithCBExcelController(self, excelFilePathPlusName):
+    def workWithCBExcelController(self):
         self.openExcelFile(excelFilePathPlusName)
         excelList = self.readList(listName='КО')
         arrayWithInfo = self.readInfoFromList(excelList, startInfoPosition=5)
         return self.createArrayOfDictWithCBInfo(arrayWithInfo)
 
-    def createCBFromExcelController(self, excelFilePathPlusName):
+    def createCBFromExcelController(self):
         '''
         Создание КО по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с КО, авторизацию и т.д.
         '''
-        CBCompanyId = self.getCompanyIdByItsShortName()
+        if self.companyWorkWithId == None:
+            self.companyWorkWithId = self.getCompanyIdByItsShortName(self.companyWorkWithName)
+        CBCompanyId = self.companyWorkWithId
         self.startWorkWithInterface(interfaceNumberInArray=2)
         self.authorization()
-        arrayOfDictWithCBInfo = self.workWithCBExcelController(excelFilePathPlusName)
+        arrayOfDictWithCBInfo = self.workWithCBExcelController()
         arrayOfDictsWithCBUserRoles = self.getHeadOfAndSecretary(len(arrayOfDictWithCBInfo))
         self.createSeveralCollegialBodies(arrayOfDictWithCBInfo, CBCompanyId, arrayOfDictsWithCBUserRoles)
 
@@ -499,24 +631,36 @@ if __name__ == '__main__':
         if sys.argv[0] != "help":
             url = sys.argv[0]
             clientBM = ClientBM(url)
+            global excelFilePathPlusName
             excelFilePathPlusName = sys.argv[1]
             login = sys.argv[2]
             password = sys.argv[3]
             clientBM.setLoginAndPassword(login, password)
             defaultCompanyShortName = sys.argv[4]
             defaultPassword = sys.argv[5]
+            if sys.argv[6] not in ["ui", "i", "u"]:
+                raise Exception("Unknown last flag name. Please, choose flag from {ui, i, u}.")
+            global workStrategyFlag
+            workStrategyFlag = sys.argv[6]
+            debugMode = sys.argv[7] != None
 
-            clientBM.createCompanyFromExcelController(excelFilePathPlusName, defaultCompanyShortName)
-            clientBM.createUsersFromExcelController(excelFilePathPlusName, defaultPassword)
-            clientBM.createCBFromExcelController(excelFilePathPlusName)
+            clientBM.createCompanyFromExcelController(defaultCompanyShortName)
+            clientBM.createUsersFromExcelController(defaultPassword)
+            clientBM.createCBFromExcelController()
+
+            clientBM.writeGuidToExcel()
         else:
-            print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):\n
-                    - адрес сервера BM\n
-                    - путь к excel файлу (с расширением и именем самого файла)\n
-                    - логин для входа на сервер BM\n
-                    - пароль для входа на сервер BM\n
-                    - короткое имя любой существующей компании стенда для поиска Id Холдинга\n
-                    - желаемый пароль для создаваемых пользователей\n""")
+            print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):
+                    - адрес сервера BM
+                    - путь к excel файлу (с расширением и именем самого файла)
+                    - логин для входа на сервер BM
+                    - пароль для входа на сервер BM
+                    - короткое имя любой существующей компании стенда для поиска Id Холдинга
+                    - желаемый пароль для создаваемых пользователей
+                    - 'i'/'iu'/'u' -- создание / создание и обновление / обновление
+                    - 'debug' (по желанию) для вывода стектрейса в терминал""")
 
     except Exception as e:
+        if debugMode:
+            raise e
         clientBM.addNoteToLogFile(e.args, warning=True)
