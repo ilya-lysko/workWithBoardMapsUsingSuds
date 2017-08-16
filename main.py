@@ -41,7 +41,7 @@ class ClientBM:
             self.currentInterfacenumberInArray = interfaceNumberInArray
             self.client = suds.client.Client(
                 self.serverURL + "/PublicApi/" + self.interfaces[interfaceNumberInArray] + ".svc?wsdl")
-            self.addNoteToLogFile('\n\nНачало работы интерфейсом' + self.interfaces[interfaceNumberInArray] + ' сервера %s' % self.serverURL)
+            self.addNoteToLogFile('\n\nНачало работы интерфейсом ' + self.interfaces[interfaceNumberInArray] + ' сервера %s' % self.serverURL)
         except URLError as e:
             self.addNoteToLogFile('\n\nСбой подключения к серверу %s' % self.serverURL, warning=True)
             self.addNoteToLogFile(e.args, warning=True)
@@ -303,6 +303,8 @@ class ClientBM:
         Создание пользователей по информации из excel.
         Включает начало работы с интерфейсом по работе (бог тафтологии) с пользователями, авторизацию и т.д.
         '''
+        if self.companyWorkWithId == None:
+            self.companyWorkWithId = self.getCompanyIdByItsShortName(self.companyWorkWithName)
         usersCompanyId = self.companyWorkWithId
         self.startWorkWithInterface(interfaceNumberInArray=1)
         self.authorization()
@@ -626,41 +628,50 @@ class ClientBM:
 
 
 if __name__ == '__main__':
-    try:
-        sys.argv = sys.argv[1:]
-        if sys.argv[0] != "help":
-            url = sys.argv[0]
-            clientBM = ClientBM(url)
-            global excelFilePathPlusName
-            excelFilePathPlusName = sys.argv[1]
-            login = sys.argv[2]
-            password = sys.argv[3]
-            clientBM.setLoginAndPassword(login, password)
-            defaultCompanyShortName = sys.argv[4]
-            defaultPassword = sys.argv[5]
-            if sys.argv[6] not in ["ui", "i", "u"]:
-                raise Exception("Unknown last flag name. Please, choose flag from {ui, i, u}.")
-            global workStrategyFlag
-            workStrategyFlag = sys.argv[6]
-            debugMode = sys.argv[7] != None
+	try:
+		sys.argv = sys.argv[1:]
+		if sys.argv[0] != "help":
+			print("Начало работы скрипта")
+			url = sys.argv[0]
+			clientBM = ClientBM(url)
+			global excelFilePathPlusName
+			excelFilePathPlusName = sys.argv[1]
+			login = sys.argv[2]
+			password = sys.argv[3]
+			clientBM.setLoginAndPassword(login, password)
+			defaultCompanyShortName = sys.argv[4]
+			defaultPassword = sys.argv[5]
+			if sys.argv[6] not in ["iu", "i", "u"]:
+				raise Exception("Unknown last flag name. Please, choose flag from {iu, i, u}.")
+			global workStrategyFlag
+			workStrategyFlag = sys.argv[6]
+			try:
+				sys.argv[7]
+				debugMode = True
+			except IndexError as e:
+				debugMode = False
 
-            clientBM.createCompanyFromExcelController(defaultCompanyShortName)
-            clientBM.createUsersFromExcelController(defaultPassword)
-            clientBM.createCBFromExcelController()
+			clientBM.createCompanyFromExcelController(defaultCompanyShortName)
+			clientBM.createUsersFromExcelController(defaultPassword)
+			clientBM.createCBFromExcelController()
 
-            clientBM.writeGuidToExcel()
-        else:
-            print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):
+			clientBM.writeGuidToExcel()
+
+			print("Скрипт завершил свою работу")
+		else:
+			print("""\nПАРАМЕТРЫ СКРИПТА (ПОРЯДОК ВАЖЕН):
                     - адрес сервера BM
                     - путь к excel файлу (с расширением и именем самого файла)
-                    - логин для входа на сервер BM
+                    - логин для входа на сервер BM (с правами на создание)
                     - пароль для входа на сервер BM
                     - короткое имя любой существующей компании стенда для поиска Id Холдинга
                     - желаемый пароль для создаваемых пользователей
                     - 'i'/'iu'/'u' -- создание / создание и обновление / обновление
                     - 'debug' (по желанию) для вывода стектрейса в терминал""")
 
-    except Exception as e:
-        if debugMode:
-            raise e
-        clientBM.addNoteToLogFile(e.args, warning=True)
+			input("\n\nНажмите Enter для завершения")
+
+	except Exception as e:
+		if debugMode:
+			raise e
+		clientBM.addNoteToLogFile(e.args, warning=True)
